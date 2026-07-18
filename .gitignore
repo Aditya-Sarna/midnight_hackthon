@@ -1,0 +1,16 @@
+node_modules
+dist
+data
+logs
+.DS_Store
+*.local
+.env
+.env.*
+!.env.example
+.tools
+*.tsbuildinfo
+.cursor
+
+# Source Midjourney assets (keep app media under public/)
+u3851613476_*
+Screenshot*.png

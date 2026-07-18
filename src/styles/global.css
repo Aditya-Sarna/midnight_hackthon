@@ -1,0 +1,135 @@
+:root {
+  /* ——— Atelier (matches intro / menu) ——— */
+  --cinema-bg: #050403;
+  --cinema-bg-lift: #0e0c0a;
+  --cinema-ink: #f7f1e8;
+  --cinema-ink-soft: rgba(247, 241, 232, 0.62);
+  --cinema-ink-faint: rgba(247, 241, 232, 0.34);
+  --cinema-rule: rgba(247, 241, 232, 0.22);
+  --cinema-glass: rgba(247, 241, 232, 0.06);
+  --cinema-glass-strong: rgba(247, 241, 232, 0.1);
+
+  /* Product ink on atelier = cinema ink */
+  --ink: var(--cinema-ink);
+  --ink-soft: var(--cinema-ink-soft);
+  --ink-solid: #0a0a0a;
+  --muted: var(--cinema-ink-faint);
+  --line: var(--cinema-rule);
+  --line-strong: rgba(247, 241, 232, 0.32);
+  --surface: var(--cinema-glass);
+  --surface-solid: rgba(18, 16, 14, 0.72);
+  --success: #3ecf8e;
+  --danger: #f07178;
+  --warn: #e0a35c;
+  --warn-soft: #f0c090;
+
+  /* Warm device interior (phone screen only) */
+  --cream: #f4efe6;
+  --cream-deep: #ebe4d8;
+  --cream-soft: #faf7f1;
+  --cream-wash: #f8f4ec;
+  --device-ink: #14120f;
+  --device-ink-soft: #3a3630;
+  --device-muted: #7a746a;
+  --device-line: rgba(20, 18, 15, 0.1);
+  --device-surface: #fffdf8;
+
+  --midnight-blue: #0a0a0a;
+  --midnight-blue-deep: #000000;
+  --midnight-black: #0a0a0a;
+
+  --font-display: "Syne", "Outfit", system-ui, sans-serif;
+  --font: "Outfit", system-ui, sans-serif;
+  --font-ui: "Outfit", system-ui, sans-serif;
+  --font-insights: "Outfit", system-ui, sans-serif;
+
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font);
+  color: var(--cinema-ink);
+  background:
+    radial-gradient(ellipse 70% 50% at 18% 10%, rgba(247, 241, 232, 0.05), transparent 55%),
+    radial-gradient(ellipse 55% 45% at 90% 80%, rgba(247, 241, 232, 0.03), transparent 50%),
+    linear-gradient(165deg, #0a0908 0%, var(--cinema-bg) 45%, #030201 100%);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+button {
+  font-family: inherit;
+  border: none;
+  cursor: pointer;
+  background: none;
+  color: inherit;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+::selection {
+  background: rgba(247, 241, 232, 0.22);
+  color: var(--cinema-ink);
+}
+
+.brand-mark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 0.95;
+}
+
+.atelier-kicker {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--cinema-ink-faint);
+}
+
+.atelier-panel {
+  background:
+    linear-gradient(165deg, rgba(247, 241, 232, 0.07), rgba(247, 241, 232, 0.03)),
+    rgba(12, 10, 9, 0.55);
+  border: 1px solid var(--cinema-rule);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+}
+
+@keyframes atelier-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "Circled",
+  "short_name": "Circled",
+  "description": "Confidential voice payments on Midnight",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F4EFE6",
+  "theme_color": "#0A0A0A",
+  "lang": "en",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    {
+      "src": "/glyph.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/glyph.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

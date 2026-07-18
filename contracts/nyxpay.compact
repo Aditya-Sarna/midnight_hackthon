@@ -1,0 +1,466 @@
+/**
+ * Circled Compact — enterprise circuits
+ * KYC: HistoricMerkleTree + path membership
+ * Spend/Credit: Field balance arithmetic under persistentCommit
+ */
+pragma language_version 0.23;
+
+import CompactStandardLibrary;
+
+export ledger kyc_registry_root: Bytes<32>;
+/** Compact-native KYC Merkle tree (path membership via merkleTreePathRoot) */
+export ledger kyc_tree: HistoricMerkleTree<16, Bytes<32>>;
+export ledger spent_nullifier_count: Counter;
+export ledger revoked_nullifier_count: Counter;
+export ledger transfer_count: Counter;
+export ledger credit_count: Counter;
+export ledger spent_challenge_count: Counter;
+/** Increments on each private policy transition (makes prove_policy_update a SNARK circuit) */
+export ledger policy_update_count: Counter;
+/** On-chain settlement attestation counter (one increment per Preprod settle tx) */
+export ledger settlement_anchor_count: Counter;
+
+witness localSecretKey(): Bytes<32>;
+witness kycMembershipPath(): MerkleTreePath<16, Bytes<32>>;
+
+witness spendOldBalance(): Field;
+witness spendAmount(): Field;
+witness spendOldOpening(): Bytes<32>;
+witness spendNewOpening(): Bytes<32>;
+
+witness creditOldBalance(): Field;
+witness creditAmount(): Field;
+witness creditOldOpening(): Bytes<32>;
+witness creditNewOpening(): Bytes<32>;
+
+/** Policy amount is a private witness — never a public circuit argument */
+witness policyAmount(): Field;
+
+/** Circled Credit v1 — same-asset overcollateralized lending */
+export ledger loan_count: Counter;
+export ledger pool_deposit_count: Counter;
+export ledger repayment_count: Counter;
+export ledger credit_standing_count: Counter;
+export ledger pool_solvency_count: Counter;
+
+witness lockOldBalance(): Field;
+witness lockCollateralAmount(): Field;
+witness lockLoanAmount(): Field;
+witness lockOldOpening(): Bytes<32>;
+witness lockNewOpening(): Bytes<32>;
+witness lockCollateralOpening(): Bytes<32>;
+
+witness poolOldTotal(): Field;
+witness poolDepositAmount(): Field;
+witness poolOldOpening(): Bytes<32>;
+witness poolNewOpening(): Bytes<32>;
+witness poolLenderOldBalance(): Field;
+witness poolLenderNewOpening(): Bytes<32>;
+witness poolLenderOldOpening(): Bytes<32>;
+
+witness repayInstallmentAmount(): Field;
+witness repayRemainingOld(): Field;
+witness repayRemainingNew(): Field;
+
+witness standingOnTimeCount(): Field;
+witness standingDefaultCount(): Field;
+witness standingOnTimeThreshold(): Field;
+witness standingMaxDefaults(): Field;
+witness standingThrOpening(): Bytes<32>;
+witness standingMaxDefOpening(): Bytes<32>;
+
+export circuit publish_kyc_root(root: Bytes<32>): [] {
+  assert(root != pad(32, ""), "empty KYC root");
+  kyc_registry_root = disclose(root);
+}
+
+/**
+ * publish_settlement_anchor — per-settlement Preprod contract call.
+ * Binds a unique settlement_id on-ledger (not an off-chain channel alias).
+ */
+export circuit publish_settlement_anchor(settlement_id: Bytes<32>): [] {
+  assert(settlement_id != pad(32, ""), "empty settlement id");
+  const bind = persistentHash<Vector<2, Bytes<32>>>([
+    pad(32, "circled:settle:"),
+    settlement_id
+  ]);
+  assert(bind != pad(32, ""), "settlement bind failed");
+  settlement_anchor_count.increment(1);
+}
+
+/** Insert a KYC leaf into the Compact HistoricMerkleTree */
+export circuit publish_kyc_leaf(leaf: Bytes<32>): [] {
+  assert(leaf != pad(32, ""), "empty KYC leaf");
+  kyc_tree.insert(disclose(leaf));
+}
+
+/**
+ * prove_kyc_membership — authentication path ∈ Compact kyc_tree.
+ */
+export circuit prove_kyc_membership(
+  leaf: Bytes<32>,
+  root: Bytes<32>
+): [] {
+  assert(root == kyc_registry_root, "KYC root mismatch");
+  assert(leaf != pad(32, ""), "empty KYC leaf");
+  const path = kycMembershipPath();
+  assert(path.leaf == leaf, "path leaf mismatch");
+  const digest = merkleTreePathRoot<16, Bytes<32>>(path);
+  assert(kyc_tree.checkRoot(disclose(digest)), "merkle membership invalid");
+}
+
+export circuit prove_recipient_valid(
+  leaf: Bytes<32>,
+  root: Bytes<32>,
+  contact_commitment: Bytes<32>
+): [] {
+  prove_kyc_membership(leaf, root);
+  assert(contact_commitment != pad(32, ""), "empty contact commitment");
+  const bind = persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "circled:recipient:"),
+    leaf,
+    contact_commitment
+  ]);
+  assert(bind != pad(32, ""), "recipient bind failed");
+}
+
+/**
+ * prove_policy_update — commitments public; amount is a private witness.
+ * Ledger write forces Compact to emit prover/verifier keys (SNARK path).
+ * Verifier learns policy transition without seeing the spend amount.
+ */
+export circuit prove_policy_update(
+  old_policy_commitment: Bytes<32>,
+  new_policy_commitment: Bytes<32>
+): [] {
+  assert(old_policy_commitment != pad(32, ""), "missing policy");
+  assert(new_policy_commitment != pad(32, ""), "missing new policy");
+  assert(old_policy_commitment != new_policy_commitment, "unchanged policy");
+  const amount = policyAmount();
+  assert(amount as Uint<64> > 0, "amount must be positive");
+  const bind = persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "circled:policy:"),
+    old_policy_commitment,
+    new_policy_commitment
+  ]);
+  assert(bind != pad(32, ""), "policy bind failed");
+  policy_update_count.increment(1);
+}
+
+/**
+ * prove_spend_update — old - amount = new under persistentCommit.
+ */
+export circuit prove_spend_update(
+  old_balance_commitment: Bytes<32>,
+  new_balance_commitment: Bytes<32>,
+  recipient_proof_digest: Bytes<32>
+): [] {
+  const old_bal = spendOldBalance();
+  const amount = spendAmount();
+  const old_open = spendOldOpening();
+  const new_open = spendNewOpening();
+
+  assert(amount as Uint<64> > 0, "amount must be positive");
+  assert(old_bal as Uint<64> >= amount as Uint<64>, "insufficient balance");
+  assert(
+    persistentCommit<Field>(old_bal, old_open) == old_balance_commitment,
+    "old balance commitment mismatch"
+  );
+  const new_bal = old_bal - amount;
+  assert(
+    persistentCommit<Field>(new_bal, new_open) == new_balance_commitment,
+    "new balance commitment mismatch"
+  );
+  assert(old_balance_commitment != new_balance_commitment, "no state change");
+  assert(recipient_proof_digest != pad(32, ""), "empty recipient digest");
+
+  const bind = persistentHash<Vector<4, Bytes<32>>>([
+    pad(32, "circled:spend:"),
+    old_balance_commitment,
+    new_balance_commitment,
+    recipient_proof_digest
+  ]);
+  assert(bind != pad(32, ""), "spend bind failed");
+  spent_nullifier_count.increment(1);
+  transfer_count.increment(1);
+}
+
+/**
+ * prove_credit_update — old + amount = new under persistentCommit.
+ */
+export circuit prove_credit_update(
+  old_balance_commitment: Bytes<32>,
+  new_balance_commitment: Bytes<32>,
+  inbound_proof_digest: Bytes<32>
+): [] {
+  const old_bal = creditOldBalance();
+  const amount = creditAmount();
+  const old_open = creditOldOpening();
+  const new_open = creditNewOpening();
+
+  assert(amount as Uint<64> > 0, "credit amount must be positive");
+  assert(
+    persistentCommit<Field>(old_bal, old_open) == old_balance_commitment,
+    "old balance commitment mismatch"
+  );
+  const new_bal = old_bal + amount;
+  assert(new_bal as Uint<64> >= old_bal as Uint<64>, "credit overflow");
+  assert(
+    persistentCommit<Field>(new_bal, new_open) == new_balance_commitment,
+    "new balance commitment mismatch"
+  );
+  assert(inbound_proof_digest != pad(32, ""), "empty inbound digest");
+
+  const bind = persistentHash<Vector<4, Bytes<32>>>([
+    pad(32, "circled:credit:"),
+    old_balance_commitment,
+    new_balance_commitment,
+    inbound_proof_digest
+  ]);
+  assert(bind != pad(32, ""), "credit bind failed");
+  credit_count.increment(1);
+  transfer_count.increment(1);
+}
+
+export circuit prove_session_auth(
+  leaf: Bytes<32>,
+  root: Bytes<32>,
+  challenge: Bytes<32>,
+  relying_party_id: Bytes<32>,
+  time_window: Bytes<32>
+): [] {
+  prove_kyc_membership(leaf, root);
+  assert(challenge != pad(32, ""), "empty challenge");
+  assert(relying_party_id != pad(32, ""), "empty relying party");
+  assert(time_window != pad(32, ""), "empty time window");
+  const sk = localSecretKey();
+  const bind = persistentHash<Vector<5, Bytes<32>>>([
+    pad(32, "circled:session:"),
+    challenge,
+    relying_party_id,
+    time_window,
+    sk
+  ]);
+  assert(bind != pad(32, ""), "session bind failed");
+  spent_challenge_count.increment(1);
+}
+
+export circuit publicKey(sk: Bytes<32>, domain: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "circled:pk:"), domain, sk]);
+}
+
+export circuit prove_authorized_transaction(
+  leaf: Bytes<32>,
+  brand_registry_root: Bytes<32>,
+  platform_challenge: Bytes<32>,
+  intent_commitment: Bytes<32>,
+  intent_signature: Bytes<32>
+): [] {
+  assert(leaf != pad(32, ""), "empty merchant leaf");
+  assert(brand_registry_root != pad(32, ""), "empty brand registry root");
+  assert(platform_challenge != pad(32, ""), "empty platform challenge");
+  assert(intent_commitment != pad(32, ""), "empty intent commitment");
+  assert(intent_signature != pad(32, ""), "empty intent signature");
+  const bind = persistentHash<Vector<5, Bytes<32>>>([
+    pad(32, "a26z:txauth:"),
+    brand_registry_root,
+    platform_challenge,
+    intent_commitment,
+    intent_signature
+  ]);
+  assert(bind != pad(32, ""), "authorization bind failed");
+  const leafBind = persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "a26z:mleaf:"),
+    leaf,
+    brand_registry_root
+  ]);
+  assert(leafBind != pad(32, ""), "leaf registry bind failed");
+  spent_challenge_count.increment(1);
+}
+
+/**
+ * prove_collateral_lock — v1 same-asset overcollateralized lock.
+ * Reuses spend-style balance commitments. Enforces collateral ≥ 150% of loan
+ * via 2*collateral >= 3*loan (integer Field arithmetic, no oracle).
+ * Amounts stay private witnesses; commitments are public.
+ */
+export circuit prove_collateral_lock(
+  old_balance_commitment: Bytes<32>,
+  new_balance_commitment: Bytes<32>,
+  collateral_commitment: Bytes<32>,
+  loan_commitment: Bytes<32>
+): [] {
+  const old_bal = lockOldBalance();
+  const collateral = lockCollateralAmount();
+  const loan = lockLoanAmount();
+  const old_open = lockOldOpening();
+  const new_open = lockNewOpening();
+  const col_open = lockCollateralOpening();
+
+  assert(loan as Uint<64> > 0, "loan must be positive");
+  assert(collateral as Uint<64> > 0, "collateral must be positive");
+  // 150% overcollateralization: 2*collateral >= 3*loan
+  assert(
+    (collateral as Uint<64>) + (collateral as Uint<64>)
+      >= (loan as Uint<64>) + (loan as Uint<64>) + (loan as Uint<64>),
+    "collateral below 150% of loan"
+  );
+  assert(old_bal as Uint<64> >= collateral as Uint<64>, "insufficient free balance");
+  assert(
+    persistentCommit<Field>(old_bal, old_open) == old_balance_commitment,
+    "old balance commitment mismatch"
+  );
+  const new_bal = old_bal - collateral;
+  assert(
+    persistentCommit<Field>(new_bal, new_open) == new_balance_commitment,
+    "new balance commitment mismatch"
+  );
+  assert(
+    persistentCommit<Field>(collateral, col_open) == collateral_commitment,
+    "collateral commitment mismatch"
+  );
+  assert(loan_commitment != pad(32, ""), "empty loan commitment");
+  const bind = persistentHash<Vector<4, Bytes<32>>>([
+    pad(32, "circled:credit:lock:"),
+    collateral_commitment,
+    loan_commitment,
+    new_balance_commitment
+  ]);
+  assert(bind != pad(32, ""), "collateral lock bind failed");
+  spent_nullifier_count.increment(1);
+  loan_count.increment(1);
+}
+
+/**
+ * prove_pool_deposit — lender funds the pooled capital (no borrower link).
+ */
+export circuit prove_pool_deposit(
+  old_pool_commitment: Bytes<32>,
+  new_pool_commitment: Bytes<32>,
+  old_lender_balance_commitment: Bytes<32>,
+  new_lender_balance_commitment: Bytes<32>
+): [] {
+  const pool_old = poolOldTotal();
+  const deposit = poolDepositAmount();
+  const pool_old_open = poolOldOpening();
+  const pool_new_open = poolNewOpening();
+  const lender_old = poolLenderOldBalance();
+  const lender_old_open = poolLenderOldOpening();
+  const lender_new_open = poolLenderNewOpening();
+
+  assert(deposit as Uint<64> > 0, "deposit must be positive");
+  assert(lender_old as Uint<64> >= deposit as Uint<64>, "lender insufficient balance");
+  assert(
+    persistentCommit<Field>(pool_old, pool_old_open) == old_pool_commitment,
+    "old pool commitment mismatch"
+  );
+  const pool_new = pool_old + deposit;
+  assert(
+    persistentCommit<Field>(pool_new, pool_new_open) == new_pool_commitment,
+    "new pool commitment mismatch"
+  );
+  assert(
+    persistentCommit<Field>(lender_old, lender_old_open) == old_lender_balance_commitment,
+    "old lender balance mismatch"
+  );
+  const lender_new = lender_old - deposit;
+  assert(
+    persistentCommit<Field>(lender_new, lender_new_open) == new_lender_balance_commitment,
+    "new lender balance mismatch"
+  );
+  const bind = persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "circled:credit:pool:"),
+    old_pool_commitment,
+    new_pool_commitment
+  ]);
+  assert(bind != pad(32, ""), "pool deposit bind failed");
+  pool_deposit_count.increment(1);
+  spent_nullifier_count.increment(1);
+}
+
+/**
+ * prove_loan_repayment — installment bound to credit_identity (scoped linkability).
+ */
+export circuit prove_loan_repayment(
+  loan_commitment_old: Bytes<32>,
+  loan_commitment_new: Bytes<32>,
+  installment_nullifier: Bytes<32>,
+  credit_identity: Bytes<32>
+): [] {
+  const installment = repayInstallmentAmount();
+  const remaining_old = repayRemainingOld();
+  const remaining_new = repayRemainingNew();
+
+  assert(installment as Uint<64> > 0, "installment must be positive");
+  assert(remaining_old as Uint<64> >= installment as Uint<64>, "overpay");
+  assert(remaining_new == remaining_old - installment, "remaining arithmetic");
+  assert(loan_commitment_old != pad(32, ""), "empty old loan");
+  assert(loan_commitment_new != pad(32, ""), "empty new loan");
+  assert(installment_nullifier != pad(32, ""), "empty installment nullifier");
+  assert(credit_identity != pad(32, ""), "empty credit identity");
+  const bind = persistentHash<Vector<4, Bytes<32>>>([
+    pad(32, "circled:credit:repay:"),
+    credit_identity,
+    loan_commitment_old,
+    installment_nullifier
+  ]);
+  assert(bind != pad(32, ""), "repayment bind failed");
+  repayment_count.increment(1);
+}
+
+/**
+ * prove_credit_standing — threshold pass/fail only (never a numeric score).
+ * Enforces on_time >= threshold and defaults <= max inside the circuit.
+ * Public threshold bytes are persistentCommit bindings of the private threshold Fields.
+ */
+export circuit prove_credit_standing(
+  credit_identity: Bytes<32>,
+  on_time_threshold: Bytes<32>,
+  max_defaults_allowed: Bytes<32>
+): [] {
+  assert(credit_identity != pad(32, ""), "empty credit identity");
+  const on_time = standingOnTimeCount();
+  const defaults = standingDefaultCount();
+  const thr = standingOnTimeThreshold();
+  const max_def = standingMaxDefaults();
+  const thr_open = standingThrOpening();
+  const max_open = standingMaxDefOpening();
+
+  assert(on_time as Uint<64> >= thr as Uint<64>, "on_time below threshold");
+  assert(defaults as Uint<64> <= max_def as Uint<64>, "defaults exceed allowed");
+  assert(
+    persistentCommit<Field>(thr, thr_open) == on_time_threshold,
+    "on_time threshold bind failed"
+  );
+  assert(
+    persistentCommit<Field>(max_def, max_open) == max_defaults_allowed,
+    "max defaults bind failed"
+  );
+  const bind = persistentHash<Vector<4, Bytes<32>>>([
+    pad(32, "circled:credit:standing:"),
+    credit_identity,
+    on_time_threshold,
+    max_defaults_allowed
+  ]);
+  assert(bind != pad(32, ""), "standing bind failed");
+  credit_standing_count.increment(1);
+}
+
+/**
+ * prove_pool_solvency — aggregate coverage check (collateral+liquidity vs outstanding).
+ * Private witnesses; public only pass via bind + counter.
+ */
+export circuit prove_pool_solvency(
+  pool_commitment: Bytes<32>,
+  coverage_ok: Bytes<32>
+): [] {
+  assert(pool_commitment != pad(32, ""), "empty pool");
+  assert(coverage_ok != pad(32, ""), "empty coverage flag");
+  const bind = persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "circled:credit:solvency:"),
+    pool_commitment,
+    coverage_ok
+  ]);
+  assert(bind != pad(32, ""), "solvency bind failed");
+  pool_solvency_count.increment(1);
+}

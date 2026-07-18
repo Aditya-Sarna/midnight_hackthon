@@ -1,0 +1,934 @@
+{
+  "compiler-version": "0.31.1",
+  "language-version": "0.23.0",
+  "runtime-version": "0.16.0",
+  "circuits": [
+    {
+      "name": "publish_kyc_root",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "root",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "publish_settlement_anchor",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "settlement_id",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "publish_kyc_leaf",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "leaf",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "prove_kyc_membership",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "leaf",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "root",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "prove_recipient_valid",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "leaf",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "root",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "contact_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "prove_policy_update",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "old_policy_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "new_policy_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "prove_spend_update",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "old_balance_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "new_balance_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "recipient_proof_digest",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "prove_credit_update",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "old_balance_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "new_balance_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "inbound_proof_digest",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "prove_session_auth",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "leaf",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "root",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "challenge",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "relying_party_id",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "time_window",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "publicKey",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "sk",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "domain",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "prove_authorized_transaction",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "leaf",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "brand_registry_root",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "platform_challenge",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "intent_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "intent_signature",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "prove_collateral_lock",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "old_balance_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "new_balance_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "collateral_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "loan_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "prove_pool_deposit",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "old_pool_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "new_pool_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "old_lender_balance_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "new_lender_balance_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "prove_loan_repayment",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "loan_commitment_old",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "loan_commitment_new",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "installment_nullifier",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "credit_identity",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "prove_credit_standing",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "credit_identity",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "on_time_threshold",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "max_defaults_allowed",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "prove_pool_solvency",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "pool_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "coverage_ok",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    }
+  ],
+  "witnesses": [
+    {
+      "name": "localSecretKey",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "kycMembershipPath",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Struct",
+        "name": "MerkleTreePath",
+        "elements": [
+          {
+            "name": "leaf",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          },
+          {
+            "name": "path",
+            "type": {
+              "type-name": "Vector",
+              "length": 16,
+              "type": {
+                "type-name": "Struct",
+                "name": "MerkleTreePathEntry",
+                "elements": [
+                  {
+                    "name": "sibling",
+                    "type": {
+                      "type-name": "Struct",
+                      "name": "MerkleTreeDigest",
+                      "elements": [
+                        {
+                          "name": "field",
+                          "type": {
+                            "type-name": "Field"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "goes_left",
+                    "type": {
+                      "type-name": "Boolean"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "spendOldBalance",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "spendAmount",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "spendOldOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "spendNewOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "creditOldBalance",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "creditAmount",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "creditOldOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "creditNewOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "policyAmount",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "lockOldBalance",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "lockCollateralAmount",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "lockLoanAmount",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "lockOldOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "lockNewOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "lockCollateralOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "poolOldTotal",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "poolDepositAmount",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "poolOldOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "poolNewOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "poolLenderOldBalance",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "poolLenderNewOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "poolLenderOldOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "repayInstallmentAmount",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "repayRemainingOld",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "repayRemainingNew",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "standingOnTimeCount",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "standingDefaultCount",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "standingOnTimeThreshold",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "standingMaxDefaults",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "standingThrOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "standingMaxDefOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    }
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "kyc_registry_root",
+      "index": 0,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "kyc_tree",
+      "index": 1,
+      "exported": true,
+      "storage": "HistoricMerkleTree",
+      "depth": 16,
+      "type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "spent_nullifier_count",
+      "index": 2,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "revoked_nullifier_count",
+      "index": 3,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "transfer_count",
+      "index": 4,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "credit_count",
+      "index": 5,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "spent_challenge_count",
+      "index": 6,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "policy_update_count",
+      "index": 7,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "settlement_anchor_count",
+      "index": 8,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "loan_count",
+      "index": 9,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "pool_deposit_count",
+      "index": 10,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "repayment_count",
+      "index": 11,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "credit_standing_count",
+      "index": 12,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "pool_solvency_count",
+      "index": 13,
+      "exported": true,
+      "storage": "Counter"
+    }
+  ]
+}
