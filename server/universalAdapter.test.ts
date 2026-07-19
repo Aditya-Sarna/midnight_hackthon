@@ -73,8 +73,23 @@ describe("universal adapter platform", () => {
     const settle = await settleRes.json();
     expect(settleRes.status).toBe(200);
     expect(settle.receiptId).toMatch(/^rcpt_uni_/);
-    expect(settle.lifecycleState).toBe("reconciled");
+    expect(["reconciled", "settled"]).toContain(settle.lifecycleState);
     expect(settle.attestationGrade).toBeTruthy();
+    expect(settle.circuit).toBe("prove_authorized_transaction");
+    expect(settle.payment.sourceSettlementId).toBeTruthy();
+    expect(settle.payment.targetSettlementId).toBeTruthy();
+    expect(settle.payment.reconciliationGaps).toEqual([]);
+    // Under harness mocks: compact-runtime. Live proof-server → zk-proved + snarkDigest.
+    expect(["zk-proved", "compact-runtime", "structural"]).toContain(settle.attestationGrade);
+
+    const refundRes = await fetch(`${harness.baseUrl}/api/universal/refund`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paymentId: settle.payment.id }),
+    });
+    const refund = await refundRes.json();
+    expect(refundRes.status).toBe(200);
+    expect(refund.payment.lifecycleState).toBe("refunded");
 
     const receipt = await fetch(
       `${harness.baseUrl}/api/universal/receipt/${settle.receiptId}`

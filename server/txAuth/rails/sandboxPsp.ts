@@ -26,6 +26,8 @@ type PspEntry = {
 };
 
 const ledger = new Map<string, PspEntry>();
+const idempotency = new Map<string, string>();
+const webhookEvents = new Set<string>();
 
 function webhookSecret(): string {
   return process.env.SANDBOX_PSP_WEBHOOK_SECRET?.trim() || "circled-sandbox-psp-dev-secret";
@@ -106,6 +108,17 @@ export const sandboxPspAdapter: ExtendedRailAdapter = {
     };
   },
   async settle(req: SettlementRequest): Promise<SettlementReceipt> {
+    const ikey = req.intent_commitment.slice(0, 32);
+    const existing = idempotency.get(ikey);
+    if (existing) {
+      return {
+        ok: true,
+        rail: "sandbox_psp",
+        settlement_id: existing,
+        routed_at: new Date().toISOString(),
+        note: "Idempotent replay — existing sandbox PSP settlement",
+      };
+    }
     const settlement_id = `stl_psp_${randomNonce(8)}`;
     ledger.set(settlement_id, {
       id: settlement_id,
@@ -114,6 +127,7 @@ export const sandboxPspAdapter: ExtendedRailAdapter = {
       settledAt: Date.now(),
       note: "sandbox PSP settled — await webhook for ops ack",
     });
+    idempotency.set(ikey, settlement_id);
     return {
       ok: true,
       rail: "sandbox_psp",
@@ -163,9 +177,22 @@ export const sandboxPspAdapter: ExtendedRailAdapter = {
     const p = (payload ?? {}) as {
       settlement_id?: string;
       event?: string;
+      event_id?: string;
       signature?: string;
       rawBody?: string;
     };
+    const eventId = String(p.event_id || "");
+    if (eventId && webhookEvents.has(eventId)) {
+      return {
+        ok: true,
+        rail: "sandbox_psp",
+        refId: String(p.settlement_id ?? ""),
+        status: "duplicate_ignored",
+        note: "Duplicate webhook ignored",
+      };
+    }
+    if (eventId) webhookEvents.add(eventId);
+
     const settlementId = String(p.settlement_id ?? "");
     const entry = ledger.get(settlementId);
     if (!entry) {
@@ -204,4 +231,6 @@ export const sandboxPspAdapter: ExtendedRailAdapter = {
 
 export function resetSandboxPsp() {
   ledger.clear();
+  idempotency.clear();
+  webhookEvents.clear();
 }

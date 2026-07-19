@@ -33,6 +33,9 @@ Scope: device Class 0 vault, Compact ledger, Midnight proof-server, browser clie
 | Stale sanctions | `SANCTIONS_RESCREEN_MS` + `/api/compliance/ops` | Needs live list provider |
 | Fake merchant | Verified-merchant Compact skill | Pilot brand registry |
 | Mistaken pay | Dispute API + on-device refund after approval | No chargeback network yet |
+| Silent route switch (USD→BTC) | RouteProof: `routeCommitment` bind + settle reject on tamper | Needs judge-visible demo + ops counters |
+| Quote / commitment replay | Quote single-use after settle; nullifiers / session burn | In-memory universal store until durable persist |
+| Provider secret / PII leak | Redacted logs (`observability.ts`); opaque destination IDs | Never log card/bank/wallet; audit responses |
 | Supply-chain / XSS | CSP via helmet; no secrets in JS bundles | Audit still required for real funds |
 
 ## Explicit non-goals (until audit + license)

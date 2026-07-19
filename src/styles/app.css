@@ -6720,6 +6720,57 @@ select:focus {
   line-height: 1.4;
 }
 
+.uni-stage__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.uni-stage__routeproof {
+  margin: 0 0 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--ink, #1a1a1a) 12%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--paper, #f7f4ef) 88%, #dce8f5);
+  max-width: 36rem;
+}
+
+.uni-stage__routeproof h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.uni-stage__routeproof ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  columns: 2;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.uni-stage__routeproof-result {
+  margin: 0.65rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.uni-stage__fail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  justify-content: center;
+}
+
+.uni-stage__tamper {
+  margin: 0;
+  color: #8a1f1f;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
 @media (max-width: 900px) {
   .uni-stage__phones {
     grid-template-columns: 1fr;

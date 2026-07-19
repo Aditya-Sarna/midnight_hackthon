@@ -141,7 +141,30 @@ export function assertProductionBoot() {
     process.env.NYXPAY_ALLOW_STUB_RAILS === "1" &&
     process.env.NYXPAY_BOOT_SOFT !== "1"
   ) {
-    missing.push("unset NYXPAY_ALLOW_STUB_RAILS (use internal_ledger or a live PSP)");
+    missing.push("unset NYXPAY_ALLOW_STUB_RAILS (use internal_ledger, sandbox_psp, or Stripe TEST)");
+  }
+  if (
+    cfg.isProduction &&
+    process.env.KYC_PROVIDER !== "onfido_shaped" &&
+    process.env.KYC_PROVIDER !== "onfido-shaped" &&
+    process.env.KYC_PROVIDER !== "shaped" &&
+    process.env.NYXPAY_BOOT_SOFT !== "1"
+  ) {
+    missing.push("KYC_PROVIDER=onfido_shaped (shaped issuer required for capped pilot)");
+  }
+  const stripeKey = process.env.STRIPE_SECRET_KEY?.trim() || "";
+  if (stripeKey.startsWith("sk_live_")) {
+    missing.push("STRIPE_SECRET_KEY must be sk_test_… (live keys forbidden)");
+  }
+  if (
+    cfg.isProduction &&
+    !stripeKey.startsWith("sk_test_") &&
+    process.env.NYXPAY_UNIVERSAL_LOCAL_STRIPE !== "1" &&
+    process.env.NYXPAY_BOOT_SOFT !== "1"
+  ) {
+    missing.push(
+      "STRIPE_SECRET_KEY=sk_test_… or NYXPAY_UNIVERSAL_LOCAL_STRIPE=1 for universal Stripe TEST rail"
+    );
   }
   if (missing.length) {
     throw new Error(

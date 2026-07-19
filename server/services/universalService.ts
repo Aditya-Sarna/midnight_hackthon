@@ -12,8 +12,14 @@ import {
 } from "./quoteEngine.js";
 import { planUniversalRoute, type RoutePlan } from "./routePlanner.js";
 import { getSandboxAccount, listSandboxAccounts } from "./sandboxAccounts.js";
-import { resolveProofMode } from "./proofServer.js";
+import { attestUniversalRouteBinding, resolveProofMode } from "./proofServer.js";
 import { settleMetricsView } from "./observability.js";
+import {
+  asExtended,
+  buildUniversalSettleRequest,
+  resolveUniversalRailId,
+} from "./universalRails.js";
+import { stripeTestMode, stripeTestOpsSnapshot } from "../txAuth/rails/stripeTest.js";
 
 export type RouteComplianceDecision =
   | "allow"
@@ -42,6 +48,10 @@ export type UniversalPaymentRecord = {
   riskDecision: RouteComplianceDecision;
   proofMode?: string;
   attestationGrade?: string;
+  circuit?: string;
+  snarkDigest?: string;
+  bindingDigest?: string;
+  proveMs?: number;
   reconciliationGaps: string[];
   createdAt: number;
   updatedAt: number;
@@ -231,34 +241,140 @@ export async function settleUniversal(input: {
     throw new Error("route commitment mismatch");
   }
 
-  const proof = await resolveProofMode();
-  const grade =
-    proof.mode === "midnight-proof-server" && proof.proofServerOk
-      ? "zk-proved"
-      : proof.mode === "compact-runtime"
-        ? "compact-runtime"
-        : "structural";
+  const intentCommitment = sha256(
+    [
+      "uni:intent",
+      route.routeCommitment,
+      route.quote.quoteId,
+      route.routeId,
+      route.intent.senderId,
+      route.intent.recipientId,
+      route.quote.sourceAmount,
+      route.quote.targetAsset,
+      String(route.quote.expiresAt),
+    ].join("|")
+  );
 
+  // Compact + proof-server SNARK over bound intent — before any Stripe test credit
+  const attest = await attestUniversalRouteBinding({
+    intentCommitment,
+    routeCommitment: route.routeCommitment,
+    quoteId: route.quote.quoteId,
+    routeId: route.routeId,
+  });
+  if (!attest.ok) {
+    metrics.failed += 1;
+    throw new Error(attest.reason || "Universal route proof failed");
+  }
+
+  const mode = await resolveProofMode();
   if (
     process.env.NYXPAY_REQUIRE_ZK_PROVE === "1" &&
-    grade !== "zk-proved" &&
+    attest.grade !== "zk-proved" &&
     !process.env.VITEST
   ) {
     metrics.failed += 1;
     throw new Error("Strict mode: proof-server SNARKs required for universal settle");
   }
 
+  // Multi-leg rail settlement — real adapters (Stripe TEST / sandbox_psp / mock_fx)
+  if (stripeTestMode() === "disabled" && route.targetAdapter.includes("stripe")) {
+    metrics.failed += 1;
+    throw new Error(
+      "Stripe TEST rail disabled — set STRIPE_SECRET_KEY=sk_test_… or NYXPAY_UNIVERSAL_LOCAL_STRIPE=1"
+    );
+  }
+
+  const amountNum = Number(route.quote.sourceAmount) || 0;
+  const targetAmountNum = Number(route.quote.targetAmount) || amountNum;
+  const gaps: string[] = [];
+
+  const sourceRailId = resolveUniversalRailId(route.sourceAdapter);
+  const sourceRail = asExtended(sourceRailId);
+  const sourceReq = buildUniversalSettleRequest({
+    intentCommitment,
+    amount: amountNum,
+    currency: route.quote.sourceAsset,
+    rail: sourceRailId,
+    accountId: route.accountId,
+  });
+  if (sourceRail.reserve) await sourceRail.reserve(sourceReq);
+  const sourceSettle = await sourceRail.settle(sourceReq);
+  if (!sourceSettle.ok) {
+    metrics.failed += 1;
+    throw new Error(`Source rail failed: ${sourceSettle.note}`);
+  }
+  const sourceSettlementId = sourceSettle.settlement_id;
+
+  let conversionSettlementId: string | undefined;
+  if (route.conversionAdapter) {
+    const fxRail = asExtended(resolveUniversalRailId(route.conversionAdapter));
+    const fxReq = buildUniversalSettleRequest({
+      intentCommitment: sha256(`${intentCommitment}|fx`),
+      amount: amountNum,
+      currency: route.quote.sourceAsset,
+      rail: "mock_fx",
+      accountId: route.accountId,
+    });
+    const fxSettle = await fxRail.settle(fxReq);
+    if (!fxSettle.ok) gaps.push("conversion_pending");
+    else conversionSettlementId = fxSettle.settlement_id;
+  }
+
+  const targetRailId = resolveUniversalRailId(route.targetAdapter);
+  const targetRail = asExtended(targetRailId);
+  const targetReq = buildUniversalSettleRequest({
+    intentCommitment: sha256(`${intentCommitment}|tgt`),
+    amount: targetAmountNum,
+    currency: route.quote.targetAsset,
+    rail: targetRailId,
+    accountId: route.accountId,
+  });
+  if (targetRail.reserve) await targetRail.reserve(targetReq);
+  const targetSettle = await targetRail.settle(targetReq);
+  if (!targetSettle.ok) {
+    metrics.failed += 1;
+    // Attempt source refund
+    if (sourceRail.refund) await sourceRail.refund(sourceSettlementId);
+    throw new Error(`Target rail failed: ${targetSettle.note}`);
+  }
+  const targetSettlementId = targetSettle.settlement_id;
+
+  // Local Stripe-test ledger: auto webhook-ack so recon can close (API TEST uses Stripe webhooks)
+  if (
+    targetRailId === "stripe_test" &&
+    stripeTestMode() === "local_ledger" &&
+    targetRail.handleWebhook
+  ) {
+    await targetRail.handleWebhook({
+      settlement_id: targetSettlementId,
+      event_id: `evt_auto_${targetSettlementId}`,
+      event: "payment_intent.succeeded",
+    });
+  }
+  if (
+    sourceRailId === "sandbox_psp" &&
+    sourceRail.handleWebhook
+  ) {
+    await sourceRail.handleWebhook({
+      settlement_id: sourceSettlementId,
+      event_id: `evt_auto_${sourceSettlementId}`,
+      event: "settlement.updated",
+    });
+  }
+
+  // Recon gaps until webhook ack on target
+  const targetStatus = targetRail.status
+    ? await targetRail.status(targetSettlementId)
+    : { status: "webhook_acked" };
+  if (targetStatus.status === "settled") {
+    gaps.push("webhook_missing");
+  }
+
   const id = `upay_${randomNonce(10)}`;
-  const intentCommitment = sha256(
-    `uni:intent|${route.routeCommitment}|${route.quote.quoteId}|${route.intent.senderId}`
-  );
   const now = Date.now();
-  const sourceSettlementId = `stl_src_${randomNonce(6)}`;
-  const conversionSettlementId = route.conversionAdapter
-    ? `stl_fx_${randomNonce(6)}`
-    : undefined;
-  const targetSettlementId = `stl_tgt_${randomNonce(6)}`;
   const receiptId = `rcpt_uni_${randomNonce(8)}`;
+  const reconciled = gaps.length === 0;
 
   const rec: UniversalPaymentRecord = {
     id,
@@ -275,19 +391,33 @@ export async function settleUniversal(input: {
     conversionSettlementId,
     targetSettlementId,
     receiptId,
-    lifecycleState: "reconciled",
+    lifecycleState: reconciled ? "reconciled" : "settled",
     riskDecision: route.compliance,
-    proofMode: proof.mode,
-    attestationGrade: grade,
-    reconciliationGaps: [],
+    proofMode: mode.mode,
+    attestationGrade: attest.grade,
+    circuit: attest.circuit,
+    snarkDigest: attest.snarkDigest,
+    bindingDigest: attest.bindingDigest,
+    proveMs: attest.proveMs,
+    reconciliationGaps: gaps,
     createdAt: now,
     updatedAt: now,
     timeline: [
       { at: now, state: "created" },
-      { at: now + 1, state: "proof_verified", note: grade },
+      {
+        at: now + 1,
+        state: "proof_verified",
+        note: `${attest.grade}${attest.snarkDigest ? ` · ${attest.snarkDigest.slice(0, 12)}…` : ""}`,
+      },
       { at: now + 2, state: "rail_reserved", note: sourceSettlementId },
-      { at: now + 3, state: "settled", note: targetSettlementId },
-      { at: now + 4, state: "reconciled", note: receiptId },
+      {
+        at: now + 3,
+        state: "settled",
+        note: `${targetRailId} · ${targetSettlementId}`,
+      },
+      ...(reconciled
+        ? [{ at: now + 4, state: "reconciled", note: receiptId }]
+        : [{ at: now + 4, state: "settled", note: `pending: ${gaps.join(",")}` }]),
     ],
   };
   payments.set(id, rec);
@@ -299,12 +429,78 @@ export function getUniversalPayment(id: string): UniversalPaymentRecord | undefi
   return payments.get(id) || [...payments.values()].find((p) => p.receiptId === id);
 }
 
-export function refundUniversal(paymentId: string): UniversalPaymentRecord {
+/** Recompute multi-leg gaps; clear webhook_missing after target webhook ack */
+export async function reconcileUniversalPayment(
+  paymentId: string
+): Promise<UniversalPaymentRecord> {
   const rec = getUniversalPayment(paymentId);
   if (!rec) throw new Error("payment not found");
-  rec.lifecycleState = "refunded";
+  const gaps: string[] = [];
+  if (!rec.snarkDigest && rec.attestationGrade !== "zk-proved" && rec.attestationGrade !== "compact-runtime") {
+    gaps.push("proof_incomplete");
+  }
+  if (!rec.sourceSettlementId) gaps.push("source_debit_missing");
+  if (rec.conversionAdapter && !rec.conversionSettlementId) gaps.push("conversion_pending");
+  if (!rec.targetSettlementId) gaps.push("target_credit_missing");
+
+  if (rec.targetSettlementId) {
+    const targetRail = asExtended(resolveUniversalRailId(rec.targetAdapter));
+    if (targetRail.status) {
+      const st = await targetRail.status(rec.targetSettlementId);
+      if (st.status === "settled") gaps.push("webhook_missing");
+      if (st.status === "not_found" || st.status === "failed") gaps.push("target_credit_missing");
+    }
+  }
+
+  rec.reconciliationGaps = gaps;
   rec.updatedAt = Date.now();
-  rec.timeline.push({ at: rec.updatedAt, state: "refunded", note: "sandbox refund" });
+  if (gaps.length === 0 && rec.lifecycleState !== "refunded") {
+    rec.lifecycleState = "reconciled";
+    rec.timeline.push({ at: rec.updatedAt, state: "reconciled", note: "gaps cleared" });
+  }
+  return rec;
+}
+
+export async function refundUniversal(paymentId: string): Promise<UniversalPaymentRecord> {
+  const rec = getUniversalPayment(paymentId);
+  if (!rec) throw new Error("payment not found");
+  rec.lifecycleState = "reversal_pending";
+  rec.updatedAt = Date.now();
+  rec.timeline.push({ at: rec.updatedAt, state: "reversal_pending", note: "refund started" });
+
+  const notes: string[] = [];
+  if (rec.targetSettlementId) {
+    const targetRail = asExtended(resolveUniversalRailId(rec.targetAdapter));
+    if (targetRail.refund) {
+      const r = await targetRail.refund(rec.targetSettlementId);
+      notes.push(r.note);
+      if (!r.ok) {
+        rec.reconciliationGaps = [...rec.reconciliationGaps, "refund_pending"];
+        rec.lifecycleState = "manual_review";
+        return rec;
+      }
+    }
+  }
+  if (rec.conversionSettlementId) {
+    const fx = asExtended("mock_fx");
+    if (fx.refund) await fx.refund(rec.conversionSettlementId);
+  }
+  if (rec.sourceSettlementId) {
+    const sourceRail = asExtended(resolveUniversalRailId(rec.sourceAdapter));
+    if (sourceRail.refund) {
+      const r = await sourceRail.refund(rec.sourceSettlementId);
+      notes.push(r.note);
+    }
+  }
+
+  rec.lifecycleState = "refunded";
+  rec.reconciliationGaps = [];
+  rec.updatedAt = Date.now();
+  rec.timeline.push({
+    at: rec.updatedAt,
+    state: "refunded",
+    note: notes.join(" · ") || "rails refunded",
+  });
   metrics.refunds += 1;
   return rec;
 }
@@ -361,6 +557,7 @@ export function listRouteCards() {
 export async function universalOpsDashboard() {
   const proof = await resolveProofMode();
   const latest = [...payments.values()].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  const stripe = stripeTestOpsSnapshot();
   return {
     ok: true,
     metrics: {
@@ -381,25 +578,64 @@ export async function universalOpsDashboard() {
         "status",
         "webhook/reconcile",
         "idempotency",
-        "timeouts",
         "duplicate callback handling",
       ],
-      note: "HMAC-signed webhook rail at POST /api/rails/sandbox_psp/webhook — pilot sandbox, not licensed UPI/bank.",
+      note: "HMAC webhook at POST /api/rails/sandbox_psp/webhook — pilot, not licensed UPI/bank.",
     },
+    stripeTest: {
+      ...stripe,
+      capabilities: [
+        "quote",
+        "reserve",
+        "settle",
+        "refund",
+        "status",
+        "webhook/reconcile",
+        "idempotency",
+        "duplicate callback handling",
+      ],
+      note:
+        stripe.mode === "stripe_api"
+          ? "Live Stripe TEST API (sk_test_) — PaymentIntent settle/refund"
+          : stripe.mode === "local_ledger"
+            ? "Local Stripe-test ledger — set STRIPE_SECRET_KEY=sk_test_… for real TEST API"
+            : "Disabled — set STRIPE_SECRET_KEY or NYXPAY_UNIVERSAL_LOCAL_STRIPE=1",
+    },
+    kycProvider: process.env.KYC_PROVIDER || "sandbox",
     latestReceipt: latest
       ? {
           receiptId: latest.receiptId,
           routeId: latest.routeId,
           quoteId: latest.quoteId,
+          routeCommitment: latest.routeCommitment,
+          intentCommitment: latest.intentCommitment,
           lifecycleState: latest.lifecycleState,
           attestationGrade: latest.attestationGrade,
           proofMode: latest.proofMode,
+          circuit: latest.circuit,
+          snarkDigest: latest.snarkDigest,
+          proveMs: latest.proveMs,
           sourceAdapter: latest.sourceAdapter,
           conversionAdapter: latest.conversionAdapter,
           targetAdapter: latest.targetAdapter,
+          sourceAsset: latest.sourceAsset,
+          targetAsset: latest.targetAsset,
           riskDecision: latest.riskDecision,
+          reconciliationGaps: latest.reconciliationGaps,
+          sourceSettlementId: latest.sourceSettlementId,
+          conversionSettlementId: latest.conversionSettlementId,
+          targetSettlementId: latest.targetSettlementId,
         }
       : null,
+    pilotHealth: (() => {
+      const pending = [...payments.values()].filter((p) => p.reconciliationGaps.length).length;
+      const failed = metrics.failed;
+      if (failed > 0 && pending > 0) return { status: "red" as const, note: "failures + recon gaps" };
+      if (pending > 0) return { status: "yellow" as const, note: "pending reconciliation gaps" };
+      if (stripe.mode === "disabled")
+        return { status: "yellow" as const, note: "Stripe TEST rail disabled" };
+      return { status: "green" as const, note: "no gaps · rails ready" };
+    })(),
     assets: listAssets().length,
     methods: listPaymentMethods().length,
     sandboxAccounts: listSandboxAccounts().length,

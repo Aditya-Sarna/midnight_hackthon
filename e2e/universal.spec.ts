@@ -60,7 +60,8 @@ test.describe("Universal adapter E2E", () => {
     });
     expect(settle.ok()).toBeTruthy();
     const s = await settle.json();
-    expect(s.targetAdapter).toBe("bitcoin_sandbox");
+    expect(s.targetAdapter).toBe("stripe_test");
+    expect(s.payment?.targetAsset || s.targetAsset).toBeTruthy();
   });
 
   test("tampered route fails", async ({ request }) => {

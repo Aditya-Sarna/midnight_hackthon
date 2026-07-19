@@ -9,6 +9,8 @@ import { ibanAdapter } from "./iban.js";
 import { pixAdapter } from "./pix.js";
 import { internalLedgerAdapter } from "./internalLedger.js";
 import { sandboxPspAdapter } from "./sandboxPsp.js";
+import { stripeTestAdapter } from "./stripeTest.js";
+import { mockFxAdapter } from "./mockFx.js";
 import type { RailAdapter } from "./types.js";
 import { asOpaqueDestination } from "../types.js";
 import { sha256 } from "../../services/crypto.js";
@@ -20,9 +22,11 @@ function register(adapter: RailAdapter) {
   adapters.set(adapter.id.toLowerCase(), adapter);
 }
 
-// Pilot production rails — CIRCLE internal ledger + webhook-complete sandbox PSP
+// Pilot production rails — CIRCLE internal ledger + webhook-complete sandbox PSP + Stripe TEST
 register(internalLedgerAdapter);
 register(sandboxPspAdapter);
+register(stripeTestAdapter);
+register(mockFxAdapter);
 // Phase 3 initial rails
 register(createCryptoAdapter("ethereum", "Ethereum"));
 register(createCryptoAdapter("midnight", "Midnight"));

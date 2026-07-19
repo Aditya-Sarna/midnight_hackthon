@@ -58,19 +58,23 @@ npm run judge   # then follow JUDGE.md
 
 ## Universal adapter gates (capped pilot)
 
-- [ ] Mock adapters disabled unless demo mode (`NYXPAY_ALLOW_STUB_RAILS` unset in prod)
-- [ ] At least one sandbox provider enabled (`sandbox_psp` HMAC webhook **or** partner ledger)
-- [ ] KYC/sanctions sandbox checks pass for Maya/Arjun (`GET /api/universal/sandbox-accounts`)
-- [ ] Route compliance evaluated before settle (`INR→USD` challenge / `INR→BTC` enhanced KYC)
-- [ ] Strict proof mode configured (`NYXPAY_REQUIRE_ZK_PROVE=1` for production)
-- [ ] Universal quote/route/settle are **backend-owned** (UI does not FX locally)
-- [ ] Reconciliation gap count = 0 before pilot (`GET /api/ops/universal`)
-- [ ] Refund flow tested (`POST /api/universal/refund`)
-- [ ] Ops dashboard monitored (`GET /api/ops/universal` + `/api/ops/metrics`)
-- [ ] Tamper-route rejection tested (route commitment mismatch)
-- [ ] Support path exists (disputes + manual_review lifecycle)
-- [ ] Privacy/Terms explain rails + conversion (Settings → Legal)
-- [ ] E2E: `npx vitest run server/universalAdapter.test.ts` (API gold paths)
+- [ ] Mock/stub rails disabled (`NYXPAY_ALLOW_STUB_RAILS` unset in prod)
+- [ ] Stripe TEST enabled: `STRIPE_SECRET_KEY=sk_test_…` **or** `NYXPAY_UNIVERSAL_LOCAL_STRIPE=1`
+- [ ] Sandbox PSP enabled (`sandbox_psp` HMAC webhook) for source debit leg
+- [ ] `KYC_PROVIDER=onfido_shaped` (shaped issuer — not live DigiLocker; required by strict boot)
+- [ ] KYC/sanctions clear for Maya/Arjun (`GET /api/universal/sandbox-accounts`)
+- [ ] Route compliance before settle (`INR→USD` challenge / `INR→BTC` enhanced KYC)
+- [ ] Strict ZK: `NYXPAY_REQUIRE_ZK_PROVE=1` + proof-server healthy
+- [ ] Universal settle runs **rail adapters** (source → FX → Stripe TEST target) after ZK prove
+- [ ] Recon gap count = 0 (`GET /api/ops/universal` → `metrics.pendingReconciliation`)
+- [ ] Refund via rails (`POST /api/universal/refund` → Stripe/PSP refund)
+- [ ] Reconcile endpoint (`POST /api/universal/reconcile`)
+- [ ] Ops: `GET /api/ops/universal` shows `stripeTest.mode` + sandbox_psp
+- [ ] Tamper-route rejection (route commitment mismatch)
+- [ ] Disputes / manual_review support path
+- [ ] Privacy/Terms explain rails + conversion
+- [ ] E2E: `npm run test:e2e` (+ optional `npm run test:e2e:playwright`)
+- [ ] Boot: `npm run start:prod` (local Stripe ledger) or `start:prod:stripe` with `sk_test_`
 
 ## Explicit non-goals for v1 pilot (cannot fake a 10/10 with code alone)
 

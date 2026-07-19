@@ -92,6 +92,23 @@ Machine-readable twin: `GET /api/compliance`
 3. **Recovery-vault processor** — disclosed; DPA paperwork required.
 4. **Erasure vs AML** — disclosed; resolve per jurisdiction in privacy policy.
 
+## Universal route compliance (pilot)
+
+Before reserve/settle, `universalService` applies a route compliance gate:
+
+| Inputs | Outputs |
+|---|---|
+| source/target asset & method, jurisdictions, amount bucket, KYC, sanctions, provider risk | `allow` · `challenge` · `deny` · `manual_review` · `enhanced_kyc_required` · `selective_disclosure_required` |
+
+Pilot policy (sandbox):
+
+- `INR → USD`: KYC required (`challenge` if soft).
+- `INR → BTC`: KYC + wallet screening (`enhanced_kyc_required`).
+- Sanctioned / stale KYC: `deny`.
+- Expired quote / tampered route: reject before rails.
+
+Opaque destination IDs only in logs/responses — no raw card/bank/wallet.
+
 ---
 
 ## API surface

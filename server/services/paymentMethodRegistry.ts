@@ -87,8 +87,8 @@ const METHODS: PaymentMethodDefinition[] = [
     supportedAssets: ["USD", "BTC", "INR", "CIRCLE_UNIT"],
     refundSupport: true,
     kycRequired: true,
-    readiness: "mock",
-    note: "Stripe Connect/Customer test accounts only — not live charges. Use Stripe test keys in production wiring.",
+    readiness: "live_pilot",
+    note: "Stripe TEST (sk_test_) PaymentIntent settle/refund + webhook; or local Stripe-test ledger via NYXPAY_UNIVERSAL_LOCAL_STRIPE=1. Not sk_live_ / not licensed bank.",
   },
 ];
 

@@ -8,18 +8,20 @@ Map every demo claim to code. Judges can verify bold claims in under two minutes
 |---|---|
 | Universal demo UI | `src/screens/UniversalAdapterDemo.tsx` |
 | Judge command center | `src/screens/JudgeCommandCenter.tsx` → `GET /api/judge/command-center` |
+| Sandbox accounts (Maya/Arjun) | `server/services/sandboxAccounts.ts` → `GET /api/universal/sandbox-accounts` |
+| Quote / route / settle | `server/services/universalService.ts` → `POST /api/universal/{quote,route,sandbox-settle}` |
+| Quote engine | `server/services/quoteEngine.ts` |
+| Route planner | `server/services/routePlanner.ts` |
+| FX rail | `server/txAuth/rails/mockFx.ts` |
+| Sandbox PSP (source) | `server/txAuth/rails/sandboxPsp.ts` |
+| Stripe TEST (target) | `server/txAuth/rails/stripeTest.ts` |
+| Proof server / ZK grade | `server/services/proofServer.ts` (`attestUniversalRouteBinding`) |
+| Lifecycle (P2P + universal) | `server/services/paymentLifecycle.ts` |
 | Asset registry | `server/services/assetRegistry.ts` → `GET /api/assets` |
 | Payment methods | `server/services/paymentMethodRegistry.ts` → `GET /api/payment-methods` |
-| Quote engine | `server/services/quoteEngine.ts` → `POST /api/universal/quote` |
-| Route planner | `server/services/routePlanner.ts` → `POST /api/universal/route` |
-| Sandbox accounts (Maya/Arjun) | `server/services/sandboxAccounts.ts` → `GET /api/universal/sandbox-accounts` |
-| Universal settle + binding | `server/services/universalService.ts` → `POST /api/universal/sandbox-settle` |
-| Lifecycle (P2P + universal fields) | `server/services/paymentLifecycle.ts` |
-| Settlement proof / grade | `server/services/payments.ts`, `proofServer.ts` (`attestationGrade`) |
-| Proof mode | `server/services/proofServer.ts` → health + settle |
 | Redaction / metrics | `server/services/observability.ts` → `GET /api/ops/metrics`, `GET /api/ops/universal` |
-| Real sandbox PSP rail | `server/txAuth/rails/sandboxPsp.ts` (HMAC webhook) |
 | Compact circuits | `contracts/nyxpay.compact` |
+| Frozen judge script | [JUDGE.md](../JUDGE.md) |
 
 ## API surface (demo + pilot)
 
@@ -35,38 +37,45 @@ POST /api/universal/sandbox-settle   # alias: POST /api/universal/settle
 GET  /api/universal/payments/:id
 GET  /api/universal/receipt/:id
 POST /api/universal/refund
+POST /api/universal/reconcile
 GET  /api/ops/universal
 GET  /api/judge/command-center
 ```
 
 ## Visible IDs judges should see
 
-After Confirm sandbox settle:
+After **Run judge demo** or Confirm settle:
 
 - `quoteId` · `routeId` · `routeCommitment`
 - `sourceAdapter` · `conversionAdapter` · `targetAdapter`
 - `proofMode` · `attestationGrade`
 - `receiptId` · `lifecycleState`
+- Ops: `settled` · `failed` · `refunds` · `tamperRejects`
 
-## Proof binding
+## Proof binding (RouteProof / ZK-proven)
 
-`routeCommitment = sha256(uni:route | routeId | quoteId | sender | receiver | assets | amount | adapters | expiry)`
+`routeCommitment = sha256(uni:route | …)`  
+`intentCommitment = sha256(uni:intent | routeCommitment | quoteId | routeId | sender | receiver | amount | target | expiry)`
 
-Settle rejects:
+On settle, `attestUniversalRouteBinding` (`proofServer.ts`):
+
+1. Compact `prove_authorized_transaction` with public inputs derived from the bind  
+2. Midnight proof-server `/prove` when healthy  
+3. Grade = **`zk-proved` only if SNARK bytes return** (never inferred from health alone)
+
+Settle rejects before prove:
 
 - wrong `routeCommitment`
 - `tamperRouteId` ≠ confirmed `routeId` → **route commitment mismatch**
-
-Intent commitment binds sender, receiver, amount, quoteId, routeId, expiry, target acceptance.
 
 ## Route matrix
 
 | Card | Readiness |
 |---|---|
-| INR → USD | demo-only (bank_sandbox) |
-| INR → BTC | demo-only (bitcoin_sandbox) |
+| INR → USD | sandbox (sandbox_psp → mock_fx → stripe_test) |
+| INR → BTC | sandbox (sandbox path + preferred asset BTC) |
 | INR → CIRCLE | live_pilot (internal_ledger) |
-| CIRCLE → USD | demo-only (bank_sandbox) |
+| CIRCLE → USD | demo-only |
 
 ## Honest boundaries
 
@@ -77,4 +86,4 @@ Intent commitment binds sender, receiver, amount, quoteId, routeId, expiry, targ
 
 ## Frozen judge script
 
-See [JUDGE.md](../JUDGE.md) § Universal adapter freeze.
+See [JUDGE.md](../JUDGE.md) — official 3-minute path: Real vs demo → Universal Adapter → Tamper → Gold ZK voice pay.

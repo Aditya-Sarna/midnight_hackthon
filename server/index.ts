@@ -57,6 +57,7 @@ import {
   listRouteCards,
   refundUniversal,
   settleUniversal,
+  reconcileUniversalPayment,
   universalOpsDashboard,
 } from "./services/universalService.js";
 import {
@@ -518,6 +519,11 @@ async function handleUniversalSettle(req: Request, res: Response) {
       targetAdapter: payment.targetAdapter,
       proofMode: payment.proofMode,
       attestationGrade: payment.attestationGrade,
+      circuit: payment.circuit,
+      snarkDigest: payment.snarkDigest,
+      bindingDigest: payment.bindingDigest,
+      proveMs: payment.proveMs,
+      intentCommitment: payment.intentCommitment,
       receiptId: payment.receiptId,
       lifecycleState: payment.lifecycleState,
     });
@@ -548,6 +554,10 @@ app.get("/api/universal/receipt/:id", (req, res) => {
     lifecycleState: payment.lifecycleState,
     proofMode: payment.proofMode,
     attestationGrade: payment.attestationGrade,
+    circuit: payment.circuit,
+    snarkDigest: payment.snarkDigest,
+    bindingDigest: payment.bindingDigest,
+    intentCommitment: payment.intentCommitment,
     sourceAdapter: payment.sourceAdapter,
     conversionAdapter: payment.conversionAdapter,
     targetAdapter: payment.targetAdapter,
@@ -557,12 +567,30 @@ app.get("/api/universal/receipt/:id", (req, res) => {
   });
 });
 
-app.post("/api/universal/refund", (req, res) => {
+app.post("/api/universal/refund", async (req, res) => {
   try {
-    const payment = refundUniversal(String(req.body?.paymentId || req.body?.id || ""));
+    const payment = await refundUniversal(
+      String(req.body?.paymentId || req.body?.id || "")
+    );
     res.json({ ok: true, payment });
   } catch (e) {
     res.status(400).json({ error: e instanceof Error ? e.message : "refund failed" });
+  }
+});
+
+app.post("/api/universal/reconcile", async (req, res) => {
+  try {
+    const payment = await reconcileUniversalPayment(
+      String(req.body?.paymentId || req.body?.id || "")
+    );
+    res.json({
+      ok: true,
+      payment,
+      gaps: payment.reconciliationGaps,
+      pendingReconciliation: payment.reconciliationGaps.length,
+    });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : "reconcile failed" });
   }
 });
 
@@ -573,6 +601,7 @@ app.get("/api/ops/universal", async (_req, res) => {
 app.get("/api/judge/command-center", async (_req, res) => {
   const ops = await universalOpsDashboard();
   const midnight = await probeMidnightFoundation().catch(() => null);
+  const latest = ops.latestReceipt;
   res.json({
     ok: true,
     proofServer: ops.proof,
@@ -587,7 +616,23 @@ app.get("/api/judge/command-center", async (_req, res) => {
       artifactsOk: midnight?.compactArtifacts?.ok ?? false,
       artifactsDetail: midnight?.compactArtifacts?.detail,
     },
-    activeRoute: ops.latestReceipt,
+    activeRoute: latest,
+    technicalReceipt: latest
+      ? {
+          quoteId: latest.quoteId,
+          routeId: latest.routeId,
+          routeCommitment: latest.routeCommitment,
+          receiptId: latest.receiptId,
+          lifecycleState: latest.lifecycleState,
+          sourceAdapter: latest.sourceAdapter,
+          conversionAdapter: latest.conversionAdapter,
+          targetAdapter: latest.targetAdapter,
+          proofMode: latest.proofMode,
+          attestationGrade: latest.attestationGrade,
+          snarkDigest: latest.snarkDigest,
+          proveMs: latest.proveMs,
+        }
+      : null,
     midnight: midnight
       ? {
           ready: Boolean(midnight.proofServer?.ok || midnight.compactArtifacts?.ok),
@@ -597,7 +642,20 @@ app.get("/api/judge/command-center", async (_req, res) => {
         }
       : { ready: false },
     settle: ops.settle,
-    metrics: ops.metrics,
+    metrics: {
+      quotes: ops.metrics.quotes,
+      routes: ops.metrics.routes,
+      settled: ops.metrics.settled,
+      failed: ops.metrics.failed,
+      refunds: ops.metrics.refunds,
+      tamperRejects: ops.metrics.tamperRejects,
+      riskHolds: ops.metrics.riskHolds,
+      sanctionsBlocks: ops.metrics.sanctionsBlocks,
+      pendingReconciliation: ops.metrics.pendingReconciliation,
+    },
+    pilotHealth: ops.pilotHealth,
+    stripeTest: ops.stripeTest,
+    sandboxProvider: ops.sandboxProvider,
   });
 });
 
@@ -777,7 +835,11 @@ app.post("/api/rails/:railId/webhook", async (req, res) => {
   }
   const rawBody = JSON.stringify(req.body ?? {});
   const signature = String(
-    req.header("x-circle-signature") || req.header("x-sandbox-psp-signature") || ""
+    req.header("x-circle-signature") ||
+      req.header("x-sandbox-psp-signature") ||
+      req.header("x-stripe-test-signature") ||
+      req.header("stripe-signature") ||
+      ""
   );
   const out = await adapter.handleWebhook({
     ...(req.body ?? {}),

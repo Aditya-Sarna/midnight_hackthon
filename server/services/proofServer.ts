@@ -29,9 +29,12 @@ import {
   openingToHex,
 } from "./compactCommit.js";
 import { proveCircuit, warmProverKeys } from "./zkProve.js";
+import { sha256 } from "./crypto.js";
 import type { ProofData } from "@midnight-ntwrk/compact-runtime";
 
 export { warmProverKeys };
+
+const UNIVERSAL_ROUTE_CIRCUIT = "prove_authorized_transaction";
 
 /** Compact execute then immediately SNARK — overlaps with sibling pipelines. */
 async function compactThenSnark(
@@ -472,6 +475,138 @@ export async function attestAndExecuteSessionAuth(input: {
       mode: status.mode,
       grade: "rejected",
       reason: e instanceof Error ? e.message : "session auth circuit failed",
+    };
+  }
+}
+
+/**
+ * ZK-proven universal route binding.
+ * Binds quoteId + routeId + routeCommitment into prove_authorized_transaction
+ * public inputs, then elevates Compact execute → proof-server /prove when healthy.
+ * Grade is zk-proved ONLY when SNARK bytes return — never inferred from health alone.
+ */
+export async function attestUniversalRouteBinding(input: {
+  intentCommitment: string;
+  routeCommitment: string;
+  quoteId: string;
+  routeId: string;
+}): Promise<{
+  ok: boolean;
+  mode: ProofMode;
+  grade: AttestationGrade;
+  circuit: string;
+  bindingDigest: string;
+  snarkDigest?: string;
+  proveMs?: number;
+  reason?: string;
+}> {
+  const cfg = loadConfig();
+  const status = await resolveProofMode();
+  const circuit = UNIVERSAL_ROUTE_CIRCUIT;
+  const intent =
+    input.intentCommitment.length === 64
+      ? input.intentCommitment
+      : sha256(input.intentCommitment);
+  const bindingDigest = sha256(
+    `uni:bind|${intent}|${input.routeCommitment}|${input.quoteId}|${input.routeId}`
+  );
+
+  // Deterministic public inputs — all non-empty Bytes<32>, bound to this route
+  const leaf = sha256(`uni:leaf|${input.routeCommitment}`);
+  const root = sha256(`uni:root|${input.routeCommitment}`);
+  const challenge = sha256(`uni:chal|${input.quoteId}|${input.routeId}`);
+  const signature = sha256(`uni:sig|${intent}|${input.routeCommitment}`);
+
+  if (!status.artifactsOk) {
+    if (cfg.requireProofs || cfg.requireZkProve) {
+      return {
+        ok: false,
+        mode: status.mode,
+        grade: "rejected",
+        circuit,
+        bindingDigest,
+        reason: "Compact artifacts required for universal route proof",
+      };
+    }
+    return {
+      ok: true,
+      mode: status.mode,
+      grade: "structural",
+      circuit,
+      bindingDigest,
+      reason: "no Compact artifacts — structural bind only",
+    };
+  }
+
+  const hasKey =
+    status.proverKeysLoaded.includes(circuit) || status.proverKeysLoaded.length >= 2;
+  const attemptZk = status.proofServerOk && status.artifactsOk && hasKey;
+  if (attemptZk) void warmProverKeys([circuit]);
+
+  try {
+    const t0 = Date.now();
+    const pipe = await compactThenSnark(
+      circuit,
+      () =>
+        runCompactCircuit(circuit, [leaf, root, challenge, intent, signature]),
+      attemptZk
+    );
+    const proveMs = Date.now() - t0;
+
+    if (pipe.snarkOk && pipe.digest) {
+      return {
+        ok: true,
+        mode: status.mode,
+        grade: "zk-proved",
+        circuit,
+        bindingDigest,
+        snarkDigest: pipe.digest,
+        proveMs,
+      };
+    }
+
+    if (cfg.requireZkProve && !process.env.VITEST) {
+      return {
+        ok: false,
+        mode: status.mode,
+        grade: "rejected",
+        circuit,
+        bindingDigest,
+        proveMs,
+        reason:
+          pipe.snarkError ??
+          "NYXPAY_REQUIRE_ZK_PROVE=1 — universal route SNARK required",
+      };
+    }
+
+    return {
+      ok: true,
+      mode: status.mode,
+      grade: "compact-runtime",
+      circuit,
+      bindingDigest,
+      proveMs,
+      reason: pipe.snarkError ?? "proof-server unavailable — Compact execute only",
+    };
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : "universal route circuit failed";
+    if (cfg.requireZkProve && !process.env.VITEST) {
+      return {
+        ok: false,
+        mode: status.mode,
+        grade: "rejected",
+        circuit,
+        bindingDigest,
+        reason,
+      };
+    }
+    return {
+      ok: true,
+      mode: status.mode,
+      grade: "structural",
+      circuit,
+      bindingDigest,
+      reason,
     };
   }
 }

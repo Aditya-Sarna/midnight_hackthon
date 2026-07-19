@@ -161,13 +161,24 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
   const [receiverActivity, setReceiverActivity] = useState<Activity[]>([]);
   const [notification, setNotification] = useState<string | null>(null);
   const [settleMeta, setSettleMeta] = useState<{
+    paymentId: string;
     quoteId: string;
     routeId: string;
+    routeCommitment: string;
     receiptId: string;
     targetAmount: string;
     targetAsset: string;
     proofMode?: string;
     attestationGrade?: string;
+    circuit?: string;
+    snarkDigest?: string;
+    proveMs?: number;
+  } | null>(null);
+  const [tamperMsg, setTamperMsg] = useState("");
+  const [lastRoute, setLastRoute] = useState<{
+    quoteId: string;
+    routeId: string;
+    routeCommitment: string;
   } | null>(null);
   const voiceRef = useRef<VoiceListenHandle | null>(null);
 
@@ -253,14 +264,16 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
     });
   }
 
-  async function confirmPay(edits: PaymentEdits) {
-    if (!receiver) return;
+  async function confirmPay(edits: PaymentEdits, accountOverride?: SandboxAccount) {
+    const matched = accountOverride || matchReceiver(edits.recipient) || receiver;
+    if (!matched) return;
     const amount = edits.amount;
-    const name = edits.recipient.trim() || pendingName;
-    const matched = matchReceiver(name) || receiver;
     setReceiverId(matched.id);
+    setPendingAmount(amount);
+    setPendingName(matched.displayName);
     setPhase("settling");
     setError("");
+    setTamperMsg("");
     try {
       const q = await readJson<{
         quoteId: string;
@@ -287,12 +300,21 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
           body: JSON.stringify({ quoteId: q.quoteId }),
         })
       );
+      setLastRoute({
+        quoteId: q.quoteId,
+        routeId: r.routeId,
+        routeCommitment: r.routeCommitment,
+      });
       const s = await readJson<{
         receiptId: string;
         proofMode?: string;
         attestationGrade?: string;
+        circuit?: string;
+        snarkDigest?: string;
+        proveMs?: number;
         quoteId: string;
         routeId: string;
+        payment: { id: string };
       }>(
         await fetch("/api/universal/sandbox-settle", {
           method: "POST",
@@ -324,13 +346,18 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
       setReceiverActivity((prev) => [inRow, ...prev].slice(0, 4));
       setNotification(`Payment received · +${targetLabel}`);
       setSettleMeta({
+        paymentId: s.payment.id,
         quoteId: s.quoteId,
         routeId: s.routeId,
+        routeCommitment: r.routeCommitment,
         receiptId: s.receiptId,
         targetAmount: q.quote.targetAmount,
         targetAsset: q.quote.targetAsset,
         proofMode: s.proofMode,
         attestationGrade: s.attestationGrade,
+        circuit: s.circuit,
+        snarkDigest: s.snarkDigest,
+        proveMs: s.proveMs,
       });
       setPhase("settled");
       window.setTimeout(() => setNotification(null), 8000);
@@ -340,15 +367,115 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
     }
   }
 
+  async function tamperRouteDemo() {
+    if (!receiver) return;
+    setTamperMsg("");
+    setError("");
+    try {
+      const q = await readJson<{ quoteId: string }>(
+        await fetch("/api/universal/quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            accountId: receiver.id,
+            amount: "500",
+            sourceAsset: "INR",
+            sourceMethod: "upi",
+          }),
+        })
+      );
+      const r = await readJson<{ routeId: string; routeCommitment: string }>(
+        await fetch("/api/universal/route", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ quoteId: q.quoteId }),
+        })
+      );
+      setLastRoute({
+        quoteId: q.quoteId,
+        routeId: r.routeId,
+        routeCommitment: r.routeCommitment,
+      });
+      await readJson(
+        await fetch("/api/universal/sandbox-settle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            quoteId: q.quoteId,
+            routeId: r.routeId,
+            routeCommitment: r.routeCommitment,
+            tamperRouteId: "route_switched_to_btc",
+          }),
+        })
+      );
+      setTamperMsg("Unexpected: tamper was accepted");
+    } catch (e) {
+      setTamperMsg(
+        `Tamper attempt: USD route → BTC route · Result: rejected · ${
+          e instanceof Error ? e.message : "Rejected"
+        }`
+      );
+    }
+  }
+
+  /** Demo-only: Maya · ₹5000 · quote → route → settle → ready for tamper */
+  async function runJudgeDemo() {
+    const maya =
+      accounts.find((a) => a.preferredAsset === "USD") ||
+      accounts.find((a) => a.displayName.includes("Maya"));
+    if (!maya) {
+      setError("Maya USD account not loaded");
+      setPhase("error");
+      return;
+    }
+    setReceiverId(maya.id);
+    await confirmPay({ amount: 5000, recipient: maya.displayName }, maya);
+  }
+
+  async function refundLast() {
+    if (!settleMeta?.paymentId) {
+      setError("No payment id — run settle first");
+      setPhase("error");
+      return;
+    }
+    try {
+      await readJson(
+        await fetch("/api/universal/refund", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paymentId: settleMeta.paymentId }),
+        })
+      );
+      setSettleMeta({
+        ...settleMeta,
+        attestationGrade: `${settleMeta.attestationGrade || "settled"} · refunded`,
+      });
+      setNotification("Refund initiated");
+      setPhase("home");
+      window.setTimeout(() => setNotification(null), 4000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Refund failed");
+      setPhase("error");
+    }
+  }
+
+  function chooseAnotherRoute() {
+    setError("");
+    setTamperMsg("");
+    setPhase("home");
+  }
+
   const senderStatus =
     phase === "listening"
       ? transcript
         ? `Hearing: “${transcript}”`
         : "I’m listening… say amount and name"
       : phase === "settling"
-        ? "Proving route · Stripe test settle…"
+        ? "Proving route on Midnight · then Stripe test…"
         : phase === "settled"
-          ? "Sent"
+          ? settleMeta?.attestationGrade === "zk-proved"
+            ? "Sent · zk-proved"
+            : "Sent"
           : "Tap to speak — amount and name (INR)";
 
   const receiverStatus = notification
@@ -371,8 +498,8 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
           <p className="atelier-kicker">Universal adapter · user-led</p>
           <h1 className="brand-mark">Circle</h1>
           <p>
-            Same home screens as the real app. You speak the payment; the receiver’s phone
-            notifies when Stripe test settlement lands.
+            Speak a payment on the real Circle home. Midnight proves the route binding
+            (zk-proved), then Stripe test credits the other phone.
           </p>
         </div>
         <button type="button" className="btn ghost" onClick={onBack}>
@@ -382,16 +509,43 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
 
       <ol className="uni-stage__howto">
         <li>
-          Pick who receives — <strong>Maya</strong> (USD) or <strong>Arjun</strong> (BTC). Both are
-          Stripe <em>test-mode</em> Connect accounts.
+          Or click <strong>Run judge demo</strong> — Maya · ₹5000 · quote → route → settle.
         </li>
         <li>
-          On the left phone, tap the Circle widget and <strong>speak</strong> — e.g. “Send five
-          thousand to Maya”.
+          Left phone: tap Circle and <strong>speak</strong> — e.g. “Send 5000 to Maya”.
         </li>
-        <li>Review the confirm sheet → Accept. Backend quotes, routes, and settles.</li>
-        <li>Watch the right phone: inbound activity + notification when paid.</li>
+        <li>
+          Accept → Compact route bind + proof-server SNARK, then Stripe test settle.
+        </li>
+        <li>
+          Click <strong>Try tamper route</strong> — must reject with route commitment mismatch.
+        </li>
       </ol>
+
+      <aside className="uni-stage__routeproof" aria-label="RouteProof binds">
+        <h3>RouteProof binds</h3>
+        <ul>
+          <li>sender</li>
+          <li>receiver</li>
+          <li>source asset</li>
+          <li>target asset</li>
+          <li>quoteId</li>
+          <li>routeId</li>
+          <li>expiry</li>
+          <li>acceptance preference</li>
+        </ul>
+        <p className="uni-stage__routeproof-result">
+          Tamper attempt: USD route → BTC route
+          <br />
+          Result:{" "}
+          {tamperMsg
+            ? tamperMsg.toLowerCase().includes("rejected") ||
+              tamperMsg.toLowerCase().includes("mismatch")
+              ? "rejected"
+              : tamperMsg
+            : "— (run Try tamper route)"}
+        </p>
+      </aside>
 
       <div className="uni-stage__receivers" role="tablist" aria-label="Receiver">
         {accounts.map((a) => (
@@ -444,7 +598,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
                       <p>
                         {phase === "listening"
                           ? transcript || "Listening…"
-                          : "Settling via Stripe test…"}
+                          : "Proving route binding on Midnight…"}
                       </p>
                     </div>
                   </div>
@@ -471,9 +625,18 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
                         {settleMeta.targetAsset}
                       </p>
                       <p className="pay-result__grade">
-                        {settleMeta.attestationGrade || "settled"} ·{" "}
-                        {settleMeta.proofMode || "route bound"}
+                        grade: {settleMeta.attestationGrade || "—"} ·{" "}
+                        {settleMeta.proofMode || "—"}
+                        {settleMeta.proveMs != null ? ` · ${settleMeta.proveMs}ms` : ""}
                       </p>
+                      {settleMeta.circuit && (
+                        <p className="pay-result__sub">
+                          {settleMeta.circuit}
+                          {settleMeta.snarkDigest
+                            ? ` · snark ${settleMeta.snarkDigest.slice(0, 16)}…`
+                            : ""}
+                        </p>
+                      )}
                       <button type="button" className="btn primary" onClick={() => setPhase("home")}>
                         Done
                       </button>
@@ -483,11 +646,47 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
                 {phase === "error" && (
                   <div className="home-overlay">
                     <div className="pay-result pay-result--err">
-                      <h2 className="pay-result__title">Try again</h2>
+                      <h2 className="pay-result__title">Payment blocked</h2>
                       <p className="pay-result__sub">{error}</p>
-                      <button type="button" className="btn primary" onClick={() => setPhase("home")}>
-                        Back
-                      </button>
+                      <div className="uni-stage__fail-actions">
+                        <button
+                          type="button"
+                          className="btn primary"
+                          onClick={() => {
+                            setError("");
+                            void confirmPay({
+                              amount: pendingAmount || 5000,
+                              recipient: pendingName || receiver?.displayName || "Maya",
+                            });
+                          }}
+                        >
+                          Retry
+                        </button>
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={chooseAnotherRoute}
+                        >
+                          Choose another route
+                        </button>
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          disabled={!settleMeta?.paymentId}
+                          onClick={() => void refundLast()}
+                        >
+                          Refund
+                        </button>
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={() => {
+                            setError("Flagged for manual review — ops will reconcile.");
+                          }}
+                        >
+                          Manual review
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -529,12 +728,56 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
         <p className="uni-stage__ids muted">
           quoteId {settleMeta.quoteId} · routeId {settleMeta.routeId} · receipt{" "}
           {settleMeta.receiptId}
+          {settleMeta.routeCommitment
+            ? ` · routeCommitment ${settleMeta.routeCommitment.slice(0, 16)}…`
+            : ""}
+          {settleMeta.snarkDigest ? ` · snarkDigest ${settleMeta.snarkDigest.slice(0, 24)}…` : ""}
+        </p>
+      )}
+
+      <div className="uni-stage__actions">
+        <button
+          type="button"
+          className="btn primary"
+          disabled={phase === "listening" || phase === "settling" || accounts.length === 0}
+          onClick={() => void runJudgeDemo()}
+        >
+          Run judge demo
+        </button>
+        <button
+          type="button"
+          className="btn ghost"
+          disabled={phase === "listening" || phase === "settling"}
+          onClick={() => void tamperRouteDemo()}
+        >
+          Try tamper route
+        </button>
+        {settleMeta?.paymentId && (
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={phase === "listening" || phase === "settling"}
+            onClick={() => void refundLast()}
+          >
+            Refund
+          </button>
+        )}
+        {lastRoute && (
+          <span className="muted uni-stage__ids">
+            last routeCommitment {lastRoute.routeCommitment.slice(0, 16)}…
+          </span>
+        )}
+      </div>
+      {tamperMsg && (
+        <p className="uni-stage__tamper" role="status">
+          {tamperMsg}
         </p>
       )}
 
       <p className="uni-stage__note muted">
-        Stripe test-mode Connect accounts only — not live charges. INR is spoken on the left;
-        receiver accepts {receiver?.preferredAsset ?? "USD/BTC"} after FX + route proof.
+        Real: Compact + Midnight proof-server SNARKs over the route bind. Sandbox: Stripe test
+        Connect + FX. Never claim licensed UPI/bank. Open Command center for the technical
+        receipt.
       </p>
     </div>
   );

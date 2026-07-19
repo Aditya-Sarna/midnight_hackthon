@@ -68,4 +68,13 @@ vi.mock("../services/proofServer.js", () => ({
     },
     proved: false,
   }),
+  attestUniversalRouteBinding: async () => ({
+    ok: true,
+    mode: "compact-runtime",
+    grade: "compact-runtime",
+    circuit: "prove_authorized_transaction",
+    bindingDigest: "b".repeat(64),
+    proveMs: 12,
+    reason: "mocked",
+  }),
 }));

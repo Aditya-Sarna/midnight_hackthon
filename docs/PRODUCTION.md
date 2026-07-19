@@ -66,6 +66,21 @@ Ops surfaces:
 
 See [LAUNCH_CHECKLIST.md](./LAUNCH_CHECKLIST.md) for capped-pilot go-live.
 
+## Pilot runbooks (universal adapter)
+
+| Incident | Action |
+|---|---|
+| Provider outage (Stripe TEST / sandbox PSP) | Fail new settles closed; set pilot health **red**; retry after rail status green; do not claim licensed bank uptime. |
+| Proof-server outage | Gold path falls to compact-runtime (or fail-closed if `NYXPAY_REQUIRE_ZK_PROVE=1`). Label mode honestly on Real vs demo + command center. |
+| Stuck reconciliation | `POST /api/universal/reconcile` with `paymentId`; inspect `reconciliationGaps` on receipt / `GET /api/ops/universal`. |
+| Target settlement failure | Auto path: release/refund source reserve; UI: **Retry** / **Choose another route** / **Refund** / **Manual review**. |
+| Refund dispute | `POST /api/universal/refund`; lifecycle → `refunded`; log only redacted fields (`observability.ts`). |
+| Sanctions hit | Route compliance returns `deny`; increment `sanctionsBlocks`; no reserve. |
+| Key rotation | Rotate Stripe TEST secret + sandbox PSP HMAC; restart API; never put secrets in frontend/localStorage. |
+| Incident response | Freeze new universal settles; export privacy-safe audit (`/api/compliance/audit-export`); reopen when pilot health **green**. |
+
+Universal ops: `GET /api/ops/universal`, `GET /api/judge/command-center` (`pilotHealth`: green / yellow / red).
+
 ## Agent skills
 
 - `verified-merchant-payment` — destination ownership binding
