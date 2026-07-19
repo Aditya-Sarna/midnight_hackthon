@@ -37,6 +37,37 @@ describe("enterprise hard-10 hardening", () => {
     expect(a.txId).not.toBe(b.txId);
     expect(a.txId).not.toMatch(/:settle:/);
     expect(a.kind).toBe("unshielded-transfer");
+    expect(a.settlementId).toMatch(/^[a-f0-9]{64}$/);
+    expect(b.settlementId).toMatch(/^[a-f0-9]{64}$/);
+    expect(a.settlementId).not.toBe(b.settlementId);
+  }, 10_000);
+
+  it("binds the network receipt to the exact universal settlement", async () => {
+    const { universalReceiptBinding, universalSettlementBinding } = await import(
+      "./services/universalOnchain.js"
+    );
+    const settlementBinding = universalSettlementBinding({
+      intentCommitment: "intent-1",
+      routeCommitment: "route-1",
+      sourceSettlementId: "source-1",
+      targetSettlementId: "target-1",
+      proofBindingDigest: "proof-1",
+    });
+    const receipt = universalReceiptBinding({
+      settlementBinding,
+      settlementId: "settlement-1",
+      txHash: "tx-1",
+      network: "preprod",
+    });
+    expect(receipt).toMatch(/^[a-f0-9]{64}$/);
+    expect(
+      universalReceiptBinding({
+        settlementBinding,
+        settlementId: "settlement-1",
+        txHash: "tx-tampered",
+        network: "preprod",
+      })
+    ).not.toBe(receipt);
   });
 
   it("requireOnchain fails closed when live submit unavailable (no fake anchor)", async () => {
@@ -54,6 +85,23 @@ describe("enterprise hard-10 hardening", () => {
     const out = await broadcastSettlement({ circuit: "prove_spend_update" });
     expect(out.status).toBe("failed");
     expect(out.kind).toBeUndefined();
+  });
+
+  it("caller-required submission preserves live wallet failures", async () => {
+    process.env.MIDNIGHT_WALLET_SEED = "ef".repeat(32);
+    const { setSettlementSubmitter } = await import("./services/preprodWallet.js");
+    setSettlementSubmitter(async () => ({
+      ok: false,
+      reason: "unavailable",
+      detail: "wallet provider rejected transaction",
+    }));
+    const { broadcastSettlement } = await import("./services/preprodBroadcast.js");
+    const out = await broadcastSettlement({
+      circuit: "prove_authorized_transaction",
+      requireSubmitted: true,
+    });
+    expect(out.status).toBe("failed");
+    expect(out.detail).toBe("wallet provider rejected transaction");
   });
 
   it("live HSM appliance signs without exporting secrets", async () => {

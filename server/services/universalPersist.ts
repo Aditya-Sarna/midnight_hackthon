@@ -7,6 +7,7 @@ import type { RoutePlan } from "./routePlanner.js";
 import type { SandboxAccount } from "./sandboxAccounts.js";
 import type { SandboxLedgerPersist } from "./sandboxLedger.js";
 import type { TestnetWitness } from "./testnetProof.js";
+import type { UniversalOnchainSettlement } from "./universalOnchain.js";
 
 export type RouteComplianceDecision =
   | "allow"
@@ -51,6 +52,8 @@ export type UniversalPaymentRecord = {
   accountId?: string;
   /** Live-testnet witness bound into the receipt — see docs/CIRCLED_REALISM_BOUNDARY.md */
   testnetWitness?: TestnetWitness;
+  /** Unique live Midnight Preprod transaction caused by this settlement. */
+  onchainSettlement?: UniversalOnchainSettlement;
 };
 
 export type StoredQuotePersist = UniversalQuote & {

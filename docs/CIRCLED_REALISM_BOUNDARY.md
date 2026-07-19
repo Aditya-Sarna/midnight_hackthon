@@ -15,6 +15,34 @@ were in live communication with a real, external, publicly-verifiable
 testnet, and we bind that proof into the receipt so anyone can
 independently re-fetch and verify.
 
+## 0. Live settlement transaction tier
+
+When `NYXPAY_UNIVERSAL_TESTNET_TX=1`, a completed universal settlement submits
+a unique Midnight Preprod transaction after proof and both rail legs succeed.
+The submitted payload anchors a digest over the intent commitment, route
+commitment, source and target settlement IDs, and proof binding digest.
+
+The durable receipt records:
+
+```text
+onchainSettlement.network
+onchainSettlement.txHash
+onchainSettlement.txKind
+onchainSettlement.settlementId
+onchainSettlement.settlementBinding
+onchainSettlement.receiptBinding
+```
+
+`receiptBinding` commits to the settlement binding, anchored settlement ID,
+network, and returned transaction hash. A tx hash is displayed only when the
+wallet submitter returned `submitted`; configured-but-unavailable submission is
+recorded as `onchain_settlement_missing`, never replaced with an old deployment
+or faucet transaction.
+
+Set `NYXPAY_UNIVERSAL_REQUIRE_TESTNET_TX=1` for a rehearsal that must fail unless
+a genuine transaction hash is returned. In this mode refundable rail legs are
+reversed before the API returns the failure.
+
 ---
 
 ## 1. Why "just add a real transfer" is not the right first step

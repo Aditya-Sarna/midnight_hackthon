@@ -650,6 +650,7 @@ app.get("/api/universal/receipt/:id", (req, res) => {
     timeline: payment.timeline,
     senderId: payment.senderId,
     testnetWitness: payment.testnetWitness,
+    onchainSettlement: payment.onchainSettlement,
   });
 });
 

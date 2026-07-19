@@ -42,6 +42,17 @@ type TestnetWitness = {
   reason?: string;
 };
 
+type OnchainSettlement = {
+  status: "submitted" | "unavailable";
+  network: string;
+  txHash?: string;
+  txKind?: "contract-call" | "unshielded-transfer";
+  settlementId?: string;
+  settlementBinding: string;
+  receiptBinding?: string;
+  detail: string;
+};
+
 type Activity = {
   id: string;
   name: string;
@@ -203,6 +214,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
     proveMs?: number;
     refunded?: boolean;
     testnetWitness?: TestnetWitness;
+    onchainSettlement?: OnchainSettlement;
   } | null>(null);
   const [tamperState, setTamperState] = useState<"idle" | "running" | "blocked">("idle");
   const [refundRequest, setRefundRequest] = useState<{
@@ -446,7 +458,11 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
         proveMs?: number;
         quoteId: string;
         routeId: string;
-        payment?: { id?: string; testnetWitness?: TestnetWitness };
+        payment?: {
+          id?: string;
+          testnetWitness?: TestnetWitness;
+          onchainSettlement?: OnchainSettlement;
+        };
       }>(
         await fetch("/api/universal/sandbox-settle", {
           method: "POST",
@@ -495,6 +511,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
         proveMs: s.proveMs,
         refunded: false,
         testnetWitness: witness ?? undefined,
+        onchainSettlement: s.payment?.onchainSettlement,
       });
       setPhase("settled");
       window.setTimeout(() => setNotification(null), 8000);
@@ -1143,6 +1160,24 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
                   <dd>witness unavailable · gap flagged in recon</dd>
                 </div>
               )}
+              {settleMeta.onchainSettlement?.status === "submitted" && (
+                <>
+                  <div>
+                    <dt>preprod tx</dt>
+                    <dd>{settleMeta.onchainSettlement.txHash?.slice(0, 24)}…</dd>
+                  </div>
+                  <div>
+                    <dt>tx binding</dt>
+                    <dd>{settleMeta.onchainSettlement.receiptBinding?.slice(0, 24)}…</dd>
+                  </div>
+                </>
+              )}
+              {settleMeta.onchainSettlement?.status === "unavailable" && (
+                <div>
+                  <dt>preprod tx</dt>
+                  <dd>submission unavailable · gap flagged in recon</dd>
+                </div>
+              )}
               <div>
                 <dt>status</dt>
                 <dd>{settleMeta.refunded ? "refunded" : "settled"}</dd>
@@ -1153,7 +1188,8 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
           )}
           <p className="muted">
             Sandbox Stripe TEST · not licensed UPI/bank · balances are backend-owned ·
-            Sepolia witness is a real testnet anchor, no value moved.
+            Sepolia is a live block witness · Preprod tx appears only when a unique
+            settlement transaction was actually submitted.
           </p>
         </div>
       </footer>

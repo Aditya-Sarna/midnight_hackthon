@@ -17,6 +17,7 @@ export type BroadcastResult = {
   status: "submitted" | "skipped" | "failed" | "requires_funding";
   network: string;
   txId?: string;
+  settlementId?: string;
   kind?: "contract-call" | "unshielded-transfer" | "anchor-fallback";
   detail: string;
 };
@@ -47,10 +48,15 @@ export async function broadcastSettlement(input: {
   circuit: string;
   snarkDigests?: Record<string, string>;
   compactLedger?: Record<string, string | undefined>;
+  /** Digest of the exact route/rail/proof state this transaction anchors. */
+  settlementBinding?: string;
+  /** Caller requires a genuine new network transaction, regardless of global mode. */
+  requireSubmitted?: boolean;
 }): Promise<BroadcastResult> {
   const cfg = loadConfig();
   const midnight = requireMidnight();
   const requireOnchain =
+    input.requireSubmitted === true ||
     Boolean(process.env.NYXPAY_REQUIRE_ONCHAIN === "1") ||
     (cfg.isStrict && process.env.NYXPAY_REQUIRE_ONCHAIN !== "0");
   const allowAnchor =
@@ -76,6 +82,7 @@ export async function broadcastSettlement(input: {
     .update(
       JSON.stringify({
         circuit: input.circuit,
+        settlementBinding: input.settlementBinding ?? "",
         snarks: input.snarkDigests ?? {},
         ledger: input.compactLedger ?? {},
         nonce: randomBytes(8).toString("hex"),
@@ -103,6 +110,7 @@ export async function broadcastSettlement(input: {
         status: "submitted",
         network: midnight.networkId,
         txId: submitted.txId,
+        settlementId,
         kind: submitted.kind,
         detail: `Preprod ${submitted.kind} submitted: ${submitted.txId}`,
       };
@@ -146,6 +154,7 @@ export async function broadcastSettlement(input: {
         status: "submitted",
         network: midnight.networkId,
         txId: existingTx,
+        settlementId,
         kind: "anchor-fallback",
         detail: `Dev anchor fallback to ${existingTx} (settlementId=${settlementId.slice(0, 16)}…)`,
       };

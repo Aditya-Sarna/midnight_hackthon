@@ -32,6 +32,7 @@ import {
   reverseSettlement,
 } from "./sandboxLedger.js";
 import { witnessSepoliaForIntent, type TestnetWitness } from "./testnetProof.js";
+import { submitUniversalOnchainSettlement } from "./universalOnchain.js";
 import { attestUniversalRouteBinding, resolveProofMode } from "./proofServer.js";
 import { settleMetricsView } from "./observability.js";
 import {
@@ -465,6 +466,28 @@ export async function settleUniversal(input: {
     gaps.push("webhook_missing");
   }
 
+  // Optional live Midnight Preprod submission. Unlike the Sepolia head witness,
+  // this transaction is caused by this settlement and anchors the exact route,
+  // rail IDs, and proof binding. Required mode fails closed and reverses any
+  // refundable rail legs when no genuine network tx hash is returned.
+  const onchainSettlement = await submitUniversalOnchainSettlement({
+    intentCommitment,
+    routeCommitment: route.routeCommitment,
+    sourceSettlementId,
+    targetSettlementId,
+    proofBindingDigest: attest.bindingDigest,
+    snarkDigest: attest.snarkDigest,
+  });
+  if (onchainSettlement?.status === "unavailable") {
+    gaps.push("onchain_settlement_missing");
+    if (process.env.NYXPAY_UNIVERSAL_REQUIRE_TESTNET_TX === "1") {
+      if (targetRail.refund) await targetRail.refund(targetSettlementId);
+      if (sourceRail.refund) await sourceRail.refund(sourceSettlementId);
+      metrics.failed += 1;
+      throw new Error(`Live testnet settlement required: ${onchainSettlement.detail}`);
+    }
+  }
+
   // Real live-testnet block-header witness — additive to the SNARK, not a
   // replacement for it. Never blocks settle; missing witness surfaces as a
   // recon gap only when the witness was actually attempted (i.e. not
@@ -527,6 +550,7 @@ export async function settleUniversal(input: {
     targetAmount: route.quote.targetAmount,
     accountId: route.accountId,
     testnetWitness: witnessAttempted ? testnetWitness : undefined,
+    onchainSettlement,
     timeline: [
       { at: now, state: "created" },
       {
@@ -540,9 +564,18 @@ export async function settleUniversal(input: {
         state: "settled",
         note: `${targetRailId} · ${targetSettlementId}`,
       },
+      ...(onchainSettlement?.status === "submitted"
+        ? [
+            {
+              at: now + 4,
+              state: "onchain_submitted",
+              note: `${onchainSettlement.network} · ${onchainSettlement.txHash}`,
+            },
+          ]
+        : []),
       ...(reconciled
-        ? [{ at: now + 4, state: "reconciled", note: receiptId }]
-        : [{ at: now + 4, state: "settled", note: `pending: ${gaps.join(",")}` }]),
+        ? [{ at: now + 5, state: "reconciled", note: receiptId }]
+        : [{ at: now + 5, state: "settled", note: `pending: ${gaps.join(",")}` }]),
     ],
   };
   payments.set(id, rec);
