@@ -18,6 +18,30 @@ type SandboxAccount = {
   badge: string;
 };
 
+type SandboxSender = {
+  id: string;
+  displayName: string;
+  handle: string;
+  asset: "INR" | "USD";
+  jurisdiction: string;
+  openingBalance: number;
+  balance: number;
+  note: string;
+};
+
+type TestnetWitness = {
+  status: "witnessed" | "unavailable";
+  chain: string;
+  chainId: number;
+  blockNumber?: number;
+  blockHash?: string;
+  blockTimestamp?: number;
+  observedAt: number;
+  source: string;
+  binding?: string;
+  reason?: string;
+};
+
 type Activity = {
   id: string;
   name: string;
@@ -25,10 +49,9 @@ type Activity = {
   direction: "in" | "out";
 };
 
-type Phase = "home" | "listening" | "ping" | "settling" | "settled" | "error";
+type Phase = "home" | "listening" | "type" | "ping" | "settling" | "settled" | "error";
 
-const SENDER_INR = 25_000;
-const SENDER_NAME = "Aditya";
+const FALLBACK_INR = 25_000;
 const APPS = [
   { name: "Phone", hue: "#34c759" },
   { name: "Mail", hue: "#3a3a3c" },
@@ -150,17 +173,21 @@ function MiniHome(props: {
 
 export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
   const [accounts, setAccounts] = useState<SandboxAccount[]>([]);
+  const [senders, setSenders] = useState<SandboxSender[]>([]);
+  const [senderId, setSenderId] = useState<string>("");
   const [receiverId, setReceiverId] = useState("");
   const [phase, setPhase] = useState<Phase>("home");
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState("");
   const [pendingAmount, setPendingAmount] = useState(0);
   const [pendingName, setPendingName] = useState("");
-  const [senderBalance, setSenderBalance] = useState(SENDER_INR);
+  const [senderBalance, setSenderBalance] = useState(FALLBACK_INR);
   const [receiverBalance, setReceiverBalance] = useState(0);
   const [senderActivity, setSenderActivity] = useState<Activity[]>([]);
   const [receiverActivity, setReceiverActivity] = useState<Activity[]>([]);
   const [notification, setNotification] = useState<string | null>(null);
+  const [testnetWitness, setTestnetWitness] = useState<TestnetWitness | null>(null);
+  const [voiceAvailable, setVoiceAvailable] = useState<boolean>(true);
   const [settleMeta, setSettleMeta] = useState<{
     paymentId: string;
     quoteId: string;
@@ -175,6 +202,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
     snarkDigest?: string;
     proveMs?: number;
     refunded?: boolean;
+    testnetWitness?: TestnetWitness;
   } | null>(null);
   const [tamperState, setTamperState] = useState<"idle" | "running" | "blocked">("idle");
   const [refundRequest, setRefundRequest] = useState<{
@@ -185,6 +213,92 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
     status: "pending" | "processing";
   } | null>(null);
   const voiceRef = useRef<VoiceListenHandle | null>(null);
+
+  const sender = senders.find((s) => s.id === senderId) ?? senders[0];
+  const senderName = sender?.displayName ?? "Sender";
+  const senderJurisdiction = sender?.jurisdiction ?? "IN";
+  const senderAsset = sender?.asset ?? "INR";
+  const senderAssetLabel = senderAsset === "USD" ? "USD" : "INR";
+
+  function formatSenderBalance(n: number): string {
+    if (senderAsset === "USD") {
+      return `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+    }
+    return formatInr(n);
+  }
+
+  async function refreshSenderBalance(id?: string): Promise<void> {
+    const target = id || senderId;
+    if (!target) return;
+    try {
+      const data = await readJson<{ balance: number }>(
+        await fetch(`/api/universal/sender-balance/${encodeURIComponent(target)}`)
+      );
+      setSenderBalance(data.balance);
+    } catch {
+      /* keep last-known — telemetry is on server side */
+    }
+  }
+
+  async function refreshReceiverBalance(id?: string): Promise<void> {
+    const target = id || receiverId;
+    if (!target) return;
+    try {
+      const data = await readJson<{ balance: number }>(
+        await fetch(`/api/universal/receiver-balance/${encodeURIComponent(target)}`)
+      );
+      setReceiverBalance(data.balance);
+    } catch {
+      /* keep last-known */
+    }
+  }
+
+  useEffect(() => {
+    setVoiceAvailable(speechRecognitionAvailable());
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/universal/senders")
+      .then((r) => readJson<{ senders: SandboxSender[] }>(r))
+      .then((data) => {
+        if (cancelled) return;
+        const list = data.senders ?? [];
+        setSenders(list);
+        const first = list[0];
+        if (first) {
+          setSenderId(first.id);
+          setSenderBalance(first.balance);
+        }
+      })
+      .catch(() => {
+        /* fall back to demo default persona */
+        if (!cancelled) setSenders([]);
+      });
+    void fetch("/api/universal/testnet-proof")
+      .then((r) => readJson<{ snapshot: TestnetWitness }>(r))
+      .then((data) => {
+        if (!cancelled && data?.snapshot) setTestnetWitness(data.snapshot);
+      })
+      .catch(() => {
+        /* soft — witness may be disabled offline */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!senderId) return;
+    void refreshSenderBalance(senderId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [senderId]);
+
+  useEffect(() => {
+    if (!receiverId) return;
+    void refreshReceiverBalance(receiverId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receiverId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -219,9 +333,9 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
 
   function startVoice() {
     if (!receiver) return;
-    if (!speechRecognitionAvailable()) {
-      setError("Voice unavailable in this browser — use Chrome/Edge and allow the mic.");
-      setPhase("error");
+    if (!voiceAvailable) {
+      // Route directly to typed entry instead of a dead-end error card.
+      openTypedEntry();
       return;
     }
     voiceRef.current?.stop();
@@ -243,12 +357,19 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
         const matched = spokenName ? matchReceiver(spokenName) : undefined;
 
         if (!amount || amount <= 0) {
-          setError("Say an amount and a name — e.g. “Send 5000 to Maya”");
-          setPhase("error");
+          // Voice couldn't extract an amount — drop the user into the
+          // typed sheet with any recipient hint we did get, so a single
+          // tap recovers instead of a "please try again" loop.
+          if (matched) setReceiverId(matched.id);
+          setPendingAmount(0);
+          setPendingName(matched?.displayName || spokenName || receiver.displayName);
+          setPhase("ping");
           return;
         }
         if (amount > senderBalance) {
-          setError("Insufficient INR balance on this demo wallet.");
+          setError(
+            `Insufficient ${senderAssetLabel} balance on this demo wallet (backend ledger).`
+          );
           setPhase("error");
           return;
         }
@@ -262,10 +383,21 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
           setPhase("home");
           return;
         }
-        setError("Couldn’t hear that — tap the widget and try again.");
+        setError("Couldn’t hear that — tap the widget and try again, or type it.");
         setPhase("error");
       },
     });
+  }
+
+  /** Manual entry path — equal-weight fallback to voice. */
+  function openTypedEntry() {
+    voiceRef.current?.stop();
+    setError("");
+    setTranscript("");
+    setNotification(null);
+    setPendingAmount(0);
+    setPendingName(receiver?.displayName ?? "");
+    setPhase("ping");
   }
 
   async function confirmPay(edits: PaymentEdits, accountOverride?: SandboxAccount) {
@@ -289,8 +421,9 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
           body: JSON.stringify({
             accountId: matched.id,
             amount: String(amount),
-            sourceAsset: "INR",
-            sourceMethod: "upi",
+            senderId: senderId || undefined,
+            sourceAsset: senderAsset,
+            sourceMethod: senderAsset === "USD" ? "stripe_test" : "upi",
           }),
         })
       );
@@ -313,7 +446,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
         proveMs?: number;
         quoteId: string;
         routeId: string;
-        payment?: { id?: string };
+        payment?: { id?: string; testnetWitness?: TestnetWitness };
       }>(
         await fetch("/api/universal/sandbox-settle", {
           method: "POST",
@@ -328,17 +461,19 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
 
       const paymentId = s.payment?.id || s.receiptId;
       const targetLabel = `${q.quote.targetAmount} ${q.quote.targetAsset}`;
-      setSenderBalance((b) => b - amount);
-      setReceiverBalance((b) => b + Number(q.quote.targetAmount));
+      const witness = s.payment?.testnetWitness ?? null;
+      if (witness) setTestnetWitness(witness);
+      // Balances are backend-authoritative — refetch instead of client sim.
+      await Promise.all([refreshSenderBalance(), refreshReceiverBalance(matched.id)]);
       const outRow: Activity = {
         id: s.receiptId,
         name: matched.displayName,
-        amountLabel: formatInr(amount),
+        amountLabel: formatSenderBalance(amount),
         direction: "out",
       };
       const inRow: Activity = {
         id: `${s.receiptId}_in`,
-        name: SENDER_NAME,
+        name: senderName,
         amountLabel: targetLabel,
         direction: "in",
       };
@@ -359,6 +494,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
         snarkDigest: s.snarkDigest,
         proveMs: s.proveMs,
         refunded: false,
+        testnetWitness: witness ?? undefined,
       });
       setPhase("settled");
       window.setTimeout(() => setNotification(null), 8000);
@@ -440,7 +576,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
       inr,
       targetAmt,
       targetAsset: settleMeta.targetAsset,
-      fromName: SENDER_NAME,
+      fromName: senderName,
       status: "pending",
     });
     setPhase("home");
@@ -466,12 +602,15 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
           body: JSON.stringify({ paymentId: settleMeta.paymentId }),
         })
       );
-      setSenderBalance((b) => b + inr);
-      setReceiverBalance((b) => Math.max(0, b - targetAmt));
+      // Backend ledger reversed; refetch instead of client sim.
+      await Promise.all([
+        refreshSenderBalance(),
+        refreshReceiverBalance(),
+      ]);
       const refundIntoSender: Activity = {
         id: `${settleMeta.receiptId}_refund_in`,
         name: "Refund",
-        amountLabel: formatInr(inr),
+        amountLabel: formatSenderBalance(inr),
         direction: "in",
       };
       const refundOutOfReceiver: Activity = {
@@ -485,7 +624,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
       setReceiverActivity((prev) => [refundOutOfReceiver, ...prev].slice(0, 4));
       setSettleMeta({ ...settleMeta, refunded: true });
       setRefundRequest(null);
-      setNotification(`Refund approved · ${formatInr(inr)} back in your wallet`);
+      setNotification(`Refund approved · ${formatSenderBalance(inr)} back in your wallet`);
       window.setTimeout(() => setNotification(null), 6000);
     } catch (e) {
       setRefundRequest(null);
@@ -549,6 +688,14 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
         <div className="uni-stage__bar-actions">
           <button
             type="button"
+            className="btn ghost uni-stage__demo-btn"
+            disabled={busy || accounts.length === 0}
+            onClick={openTypedEntry}
+          >
+            Type instead
+          </button>
+          <button
+            type="button"
             className="btn primary uni-stage__demo-btn"
             disabled={busy || accounts.length === 0}
             onClick={() => void runJudgeDemo()}
@@ -557,6 +704,63 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
           </button>
         </div>
       </header>
+
+      {senders.length > 1 && (
+        <div className="uni-stage__personas" role="tablist" aria-label="Sender persona">
+          {senders.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              role="tab"
+              aria-selected={senderId === s.id}
+              className={senderId === s.id ? "is-active" : ""}
+              disabled={busy}
+              title={`${s.displayName} · ${s.jurisdiction} · ${s.asset} · ${s.note}`}
+              onClick={() => {
+                setSenderId(s.id);
+                setSenderBalance(s.balance);
+                setSenderActivity([]);
+                setNotification(null);
+                setTamperState("idle");
+                if (phase !== "home") setPhase("home");
+              }}
+            >
+              <strong>{s.displayName.split(" ")[0]}</strong>
+              <em>
+                {s.jurisdiction} · {s.asset}
+              </em>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {testnetWitness && (
+        <div
+          className={`uni-stage__witness ${
+            testnetWitness.status === "witnessed" ? "is-live" : "is-offline"
+          }`}
+          role="status"
+          aria-label="Live testnet block anchor"
+        >
+          <span className="uni-stage__witness-dot" aria-hidden />
+          <span className="uni-stage__witness-body">
+            {testnetWitness.status === "witnessed" ? (
+              <>
+                <strong>Sepolia block #{testnetWitness.blockNumber?.toLocaleString()}</strong>
+                <em>
+                  {(testnetWitness.blockHash ?? "").slice(0, 14)}…
+                  {" · "}no value moved · anchor only
+                </em>
+              </>
+            ) : (
+              <>
+                <strong>Sepolia witness unavailable</strong>
+                <em>settle still completes · reconciliation flags the gap</em>
+              </>
+            )}
+          </span>
+        </div>
+      )}
 
       <div className="uni-stage__receivers" role="tablist" aria-label="Pay to">
         {accounts.map((a) => (
@@ -582,15 +786,18 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
 
       <div className="uni-stage__phones">
         <div className="uni-phone">
-          <p className="uni-phone__label">{SENDER_NAME} · INR</p>
+          <p className="uni-phone__label">
+            {senderName} · {senderAsset} · {senderJurisdiction}
+            <span className="uni-phone__ledger-hint"> · backend ledger</span>
+          </p>
           <div className="phone-shell uni-phone__shell">
             <div className="phone">
               <div className="phone__notch" aria-hidden />
               <div className="phone__screen">
                 <MiniHome
-                  role={SENDER_NAME}
-                  assetLabel="INR"
-                  balanceLabel={formatInr(senderBalance)}
+                  role={senderName}
+                  assetLabel={senderAsset}
+                  balanceLabel={formatSenderBalance(senderBalance)}
                   statusLine={
                     settleMeta?.refunded && notification?.startsWith("Refund")
                       ? "Refund received"
@@ -606,7 +813,11 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
                     if (phase === "ping" || phase === "settling") return;
                     startVoice();
                   }}
-                  inputHint="Tap · say amount and name"
+                  inputHint={
+                    voiceAvailable
+                      ? "Tap · say amount and name"
+                      : "Voice unavailable — tap “Type instead”"
+                  }
                 />
                 {(phase === "listening" || phase === "settling") && (
                   <div className="home-overlay">
@@ -671,18 +882,27 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
                       <h2 className="pay-result__title">Couldn’t send</h2>
                       <p className="pay-result__sub">{error}</p>
                       <div className="uni-stage__fail-actions">
+                        {voiceAvailable && (
+                          <button
+                            type="button"
+                            className="btn primary"
+                            onClick={() => {
+                              setError("");
+                              startVoice();
+                            }}
+                          >
+                            Try voice again
+                          </button>
+                        )}
                         <button
                           type="button"
-                          className="btn primary"
+                          className={voiceAvailable ? "btn ghost" : "btn primary"}
                           onClick={() => {
                             setError("");
-                            void confirmPay({
-                              amount: pendingAmount || 5000,
-                              recipient: pendingName || receiver?.displayName || "Maya",
-                            });
+                            openTypedEntry();
                           }}
                         >
-                          Retry
+                          Type instead
                         </button>
                         <button type="button" className="btn ghost" onClick={chooseAnotherRoute}>
                           Switch person
@@ -907,6 +1127,21 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
                   <dd>{settleMeta.snarkDigest.slice(0, 24)}…</dd>
                 </div>
               )}
+              {settleMeta.testnetWitness?.status === "witnessed" && (
+                <div>
+                  <dt>sepolia</dt>
+                  <dd>
+                    #{settleMeta.testnetWitness.blockNumber?.toLocaleString()} ·{" "}
+                    {(settleMeta.testnetWitness.blockHash ?? "").slice(0, 14)}…
+                  </dd>
+                </div>
+              )}
+              {settleMeta.testnetWitness?.status === "unavailable" && (
+                <div>
+                  <dt>sepolia</dt>
+                  <dd>witness unavailable · gap flagged in recon</dd>
+                </div>
+              )}
               <div>
                 <dt>status</dt>
                 <dd>{settleMeta.refunded ? "refunded" : "settled"}</dd>
@@ -916,7 +1151,8 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
             <p className="muted">Run demo or speak a payment — IDs appear here after settle.</p>
           )}
           <p className="muted">
-            Sandbox Stripe TEST · not licensed UPI/bank · Command center for ops.
+            Sandbox Stripe TEST · not licensed UPI/bank · balances are backend-owned ·
+            Sepolia witness is a real testnet anchor, no value moved.
           </p>
         </div>
       </footer>

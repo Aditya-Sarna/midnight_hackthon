@@ -20,6 +20,18 @@ import {
   listSandboxAccounts,
   type SandboxAccount,
 } from "./sandboxAccounts.js";
+import {
+  bindSandboxLedgerPersist,
+  creditReceiver,
+  debitSender,
+  exportSandboxLedger,
+  getSandboxSender,
+  hydrateSandboxLedger,
+  resetSandboxLedger,
+  resolveSenderId,
+  reverseSettlement,
+} from "./sandboxLedger.js";
+import { witnessSepoliaForIntent, type TestnetWitness } from "./testnetProof.js";
 import { attestUniversalRouteBinding, resolveProofMode } from "./proofServer.js";
 import { settleMetricsView } from "./observability.js";
 import {
@@ -67,6 +79,7 @@ const metrics = {
 };
 
 let boundStore: Store | null = null;
+let lastTestnetWitness: TestnetWitness | undefined;
 
 function persistUniversal() {
   if (!boundStore) return;
@@ -78,6 +91,8 @@ function persistUniversal() {
     sandboxAccounts: listSandboxAccounts().map((a) => ({ ...a })),
     stripeLedger: exportStripeTestLedger(),
     sandboxPspLedger: exportSandboxPspLedger(),
+    sandboxLedger: exportSandboxLedger(),
+    lastTestnetWitness,
   };
   saveStore(boundStore);
 }
@@ -85,6 +100,7 @@ function persistUniversal() {
 export function bindUniversalStore(store: Store) {
   boundStore = store;
   bindSandboxAccountsPersist(() => persistUniversal());
+  bindSandboxLedgerPersist(() => persistUniversal());
   const bucket = store.universal;
   if (bucket) {
     quotes.clear();
@@ -95,11 +111,18 @@ export function bindUniversalStore(store: Store) {
     for (const [k, v] of Object.entries(bucket.payments || {})) payments.set(k, v);
     Object.assign(metrics, bucket.metrics || {});
     hydrateSandboxAccounts(bucket.sandboxAccounts);
+    hydrateSandboxLedger(bucket.sandboxLedger);
+    lastTestnetWitness = bucket.lastTestnetWitness;
     if (bucket.stripeLedger) importStripeTestLedger(bucket.stripeLedger);
     if (bucket.sandboxPspLedger) importSandboxPspLedger(bucket.sandboxPspLedger);
   } else {
     hydrateSandboxAccounts(undefined);
+    hydrateSandboxLedger(undefined);
   }
+}
+
+export function getLastTestnetWitness(): TestnetWitness | undefined {
+  return lastTestnetWitness;
 }
 
 /** Hard compliance: challenge / enhanced / deny block settle unless account is cleared. */
@@ -193,10 +216,18 @@ export function createUniversalQuote(input: {
     metrics.sanctionsBlocks += 1;
     throw new Error("Recipient failed sanctions screening");
   }
+  // Resolve to a real backend persona so `intent.senderId` binds to a
+  // persisted sender with its own balance / jurisdiction (see
+  // docs/CIRCLED_MULTI_PERSONA.md). Preserves back-compat with old
+  // "sandbox_sender" callers by mapping to the default persona.
+  const resolvedSenderId = resolveSenderId(input.senderId);
+  const sender = getSandboxSender(resolvedSenderId);
+  const sourceAsset =
+    (input.sourceAsset || sender?.asset || "INR").toUpperCase();
   const intent: UniversalPaymentIntent = {
-    senderId: input.senderId || "sandbox_sender",
+    senderId: resolvedSenderId,
     recipientId: account.id,
-    sourceAsset: (input.sourceAsset || "INR").toUpperCase(),
+    sourceAsset,
     sourceMethod: input.sourceMethod || "upi",
     targetAsset: account.preferredAsset,
     targetMethod: account.preferredMethod,
@@ -434,6 +465,32 @@ export async function settleUniversal(input: {
     gaps.push("webhook_missing");
   }
 
+  // Real live-testnet block-header witness — additive to the SNARK, not a
+  // replacement for it. Never blocks settle; missing witness surfaces as a
+  // recon gap only when the witness was actually attempted (i.e. not
+  // administratively disabled). See docs/CIRCLED_REALISM_BOUNDARY.md.
+  const testnetWitness = await witnessSepoliaForIntent(intentCommitment);
+  const witnessAttempted = testnetWitness.reason !== "disabled";
+  if (witnessAttempted) {
+    lastTestnetWitness = testnetWitness;
+    if (testnetWitness.status !== "witnessed") {
+      gaps.push("testnet_witness_missing");
+    }
+  }
+
+  // Server-authoritative sandbox ledger — replaces client-side balance
+  // simulation. debit is best-effort in sandbox: if the sender has been
+  // reset mid-flow or persona was renamed, we log a gap rather than fail
+  // an already-proved+settled rail leg. See docs/CIRCLED_TRUST_SURFACE.md.
+  const senderAmountForLedger = amountNum;
+  const targetAmountForLedger = targetAmountNum;
+  try {
+    debitSender(route.intent.senderId, senderAmountForLedger);
+  } catch (err) {
+    gaps.push(`ledger_debit_failed:${err instanceof Error ? err.message : "unknown"}`);
+  }
+  creditReceiver(route.accountId, targetAmountForLedger);
+
   const id = `upay_${randomNonce(10)}`;
   const now = Date.now();
   const receiptId = `rcpt_uni_${randomNonce(8)}`;
@@ -465,6 +522,11 @@ export async function settleUniversal(input: {
     reconciliationGaps: gaps,
     createdAt: now,
     updatedAt: now,
+    senderId: route.intent.senderId,
+    sourceAmount: route.quote.sourceAmount,
+    targetAmount: route.quote.targetAmount,
+    accountId: route.accountId,
+    testnetWitness: witnessAttempted ? testnetWitness : undefined,
     timeline: [
       { at: now, state: "created" },
       {
@@ -569,6 +631,17 @@ export async function refundUniversal(paymentId: string): Promise<UniversalPayme
     state: "refunded",
     note: notes.join(" · ") || "rails refunded",
   });
+  // Reverse the server-authoritative sandbox ledger — mirror of the
+  // debit/credit performed at settle. Safe on repeat: reverseSettlement
+  // clamps receiver balance at zero and just tops up the sender.
+  if (rec.senderId && rec.accountId) {
+    reverseSettlement({
+      senderId: rec.senderId,
+      accountId: rec.accountId,
+      senderAmount: Number(rec.sourceAmount) || 0,
+      receiverAmount: Number(rec.targetAmount) || 0,
+    });
+  }
   metrics.refunds += 1;
   persistUniversal();
   return rec;
@@ -724,6 +797,8 @@ export function resetUniversalService() {
   metrics.riskHolds = 0;
   metrics.sanctionsBlocks = 0;
   metrics.tamperRejects = 0;
+  resetSandboxLedger();
+  lastTestnetWitness = undefined;
   if (boundStore) {
     boundStore.universal = undefined;
     saveStore(boundStore);

@@ -55,6 +55,7 @@ import {
   bindUniversalStore,
   createUniversalQuote,
   createUniversalRoute,
+  getLastTestnetWitness,
   getUniversalPayment,
   listRouteCards,
   refundUniversal,
@@ -62,6 +63,13 @@ import {
   reconcileUniversalPayment,
   universalOpsDashboard,
 } from "./services/universalService.js";
+import {
+  getReceiverBalance,
+  getSandboxSender,
+  listSandboxSenders,
+  resetSandboxLedger,
+} from "./services/sandboxLedger.js";
+import { testnetProofSnapshot } from "./services/testnetProof.js";
 import {
   listPaymentLifecycleForUser,
   publicReceiptView,
@@ -429,6 +437,57 @@ app.get("/api/universal/sandbox-accounts", (_req, res) => {
   res.json({ ok: true, accounts: listSandboxAccounts() });
 });
 
+// --- Backend-authoritative sandbox ledger + real-testnet witness ---
+// See docs/CIRCLED_TRUST_SURFACE.md, docs/CIRCLED_MULTI_PERSONA.md,
+// docs/CIRCLED_REALISM_BOUNDARY.md.
+
+app.get("/api/universal/senders", (_req, res) => {
+  res.json({ ok: true, senders: listSandboxSenders() });
+});
+
+app.get("/api/universal/sender-balance/:id", (req, res) => {
+  const s = getSandboxSender(String(req.params.id));
+  if (!s) return res.status(404).json({ error: "sender not found" });
+  res.json({
+    ok: true,
+    senderId: s.id,
+    displayName: s.displayName,
+    asset: s.asset,
+    jurisdiction: s.jurisdiction,
+    balance: s.balance,
+    openingBalance: s.openingBalance,
+  });
+});
+
+app.get("/api/universal/receiver-balance/:id", (req, res) => {
+  const accountId = String(req.params.id);
+  const account = listSandboxAccounts().find((a) => a.id === accountId);
+  if (!account) return res.status(404).json({ error: "account not found" });
+  res.json({
+    ok: true,
+    accountId,
+    asset: account.preferredAsset,
+    balance: getReceiverBalance(accountId),
+  });
+});
+
+app.post("/api/universal/reset-balances", (_req, res) => {
+  resetSandboxLedger();
+  res.json({ ok: true, senders: listSandboxSenders() });
+});
+
+app.get("/api/universal/testnet-proof", async (_req, res) => {
+  try {
+    const [snapshot, last] = await Promise.all([
+      testnetProofSnapshot(),
+      Promise.resolve(getLastTestnetWitness()),
+    ]);
+    res.json({ ok: true, snapshot, lastBoundIntoReceipt: last ?? null });
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "testnet proof failed" });
+  }
+});
+
 app.post("/api/universal/sandbox-accounts", (req, res) => {
   try {
     const account = createSandboxAccount({
@@ -589,6 +648,8 @@ app.get("/api/universal/receipt/:id", (req, res) => {
     riskDecision: payment.riskDecision,
     reconciliationGaps: payment.reconciliationGaps,
     timeline: payment.timeline,
+    senderId: payment.senderId,
+    testnetWitness: payment.testnetWitness,
   });
 });
 

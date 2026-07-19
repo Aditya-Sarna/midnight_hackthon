@@ -6716,6 +6716,108 @@ select:focus {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
 }
 
+/* --- Sender persona picker (docs/CIRCLED_MULTI_PERSONA.md) --- */
+.uni-stage__personas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.uni-stage__personas button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px dashed rgba(26, 23, 20, 0.28);
+  background: rgba(255, 252, 247, 0.5);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.uni-stage__personas button:hover:not(:disabled) {
+  border-color: rgba(26, 23, 20, 0.55);
+}
+
+.uni-stage__personas button.is-active {
+  border-style: solid;
+  border-color: rgba(26, 23, 20, 0.6);
+  background: rgba(26, 23, 20, 0.08);
+}
+
+.uni-stage__personas em {
+  font-style: normal;
+  font-size: 0.72rem;
+  opacity: 0.7;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+/* --- Live testnet witness pill (docs/CIRCLED_REALISM_BOUNDARY.md) --- */
+.uni-stage__witness {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  align-self: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(26, 23, 20, 0.14);
+  background: rgba(255, 252, 247, 0.65);
+  font-size: 0.82rem;
+  color: rgba(26, 23, 20, 0.85);
+  max-width: 100%;
+}
+
+.uni-stage__witness-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #cf9c3a;
+  box-shadow: 0 0 0 3px rgba(207, 156, 58, 0.18);
+}
+
+.uni-stage__witness.is-live .uni-stage__witness-dot {
+  background: #37a86e;
+  box-shadow: 0 0 0 3px rgba(55, 168, 110, 0.2);
+  animation: uni-witness-pulse 2.2s ease-in-out infinite;
+}
+
+.uni-stage__witness.is-offline {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.uni-stage__witness-body {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.15;
+}
+
+.uni-stage__witness-body strong {
+  font-weight: 600;
+}
+
+.uni-stage__witness-body em {
+  font-style: normal;
+  opacity: 0.72;
+  font-size: 0.74rem;
+}
+
+@keyframes uni-witness-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.28); }
+}
+
+/* --- Backend-ledger hint under the sender phone label --- */
+.uni-phone__ledger-hint {
+  opacity: 0.6;
+  font-size: 0.78em;
+}
+
 .uni-stage__phones {
   display: grid;
   grid-template-columns: 1fr auto 1fr;

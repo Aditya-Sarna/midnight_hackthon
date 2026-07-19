@@ -5,6 +5,8 @@
 import type { UniversalPaymentIntent, UniversalQuote } from "./quoteEngine.js";
 import type { RoutePlan } from "./routePlanner.js";
 import type { SandboxAccount } from "./sandboxAccounts.js";
+import type { SandboxLedgerPersist } from "./sandboxLedger.js";
+import type { TestnetWitness } from "./testnetProof.js";
 
 export type RouteComplianceDecision =
   | "allow"
@@ -41,6 +43,14 @@ export type UniversalPaymentRecord = {
   createdAt: number;
   updatedAt: number;
   timeline: Array<{ at: number; state: string; note?: string }>;
+  /** Backend-authoritative sandbox sender for this payment */
+  senderId?: string;
+  /** Amounts (source + target) preserved so refunds can reverse the ledger */
+  sourceAmount?: string;
+  targetAmount?: string;
+  accountId?: string;
+  /** Live-testnet witness bound into the receipt — see docs/CIRCLED_REALISM_BOUNDARY.md */
+  testnetWitness?: TestnetWitness;
 };
 
 export type StoredQuotePersist = UniversalQuote & {
@@ -82,4 +92,8 @@ export type UniversalPersistBucket = {
   sandboxAccounts: SandboxAccount[];
   stripeLedger?: RailLedgerPersist;
   sandboxPspLedger?: RailLedgerPersist;
+  /** Server-authoritative sandbox ledger (senders + receiver balances) */
+  sandboxLedger?: SandboxLedgerPersist;
+  /** Last-known testnet witness — public snapshot for the demo header */
+  lastTestnetWitness?: TestnetWitness;
 };
