@@ -4,17 +4,29 @@ import { SystemsTheater } from "./components/SystemsTheater";
 import { DemoDirector } from "./components/DemoDirector";
 import { GuideFriend } from "./components/GuideFriend";
 import { IntroSplash } from "./components/IntroSplash";
+import { WelcomeScreen } from "./components/WelcomeScreen";
 import { BootLoading } from "./components/BootLoading";
 import { MainMenu, type MenuDestination } from "./components/MainMenu";
 import { InstallPrompt } from "./components/InstallPrompt";
+import { ProductGate } from "./components/ProductGate";
+import { JudgeTruthPanel } from "./components/JudgeTruthPanel";
 import { Onboarding } from "./screens/Onboarding";
 import { Wallet, type WalletGuideCommand } from "./screens/Wallet";
 import { Recovery } from "./screens/Recovery";
+import { SettingsScreen } from "./screens/Settings";
 import { ZkDemoTriptych } from "./screens/ZkDemoTriptych";
 import { MerchantReceive } from "./screens/MerchantReceive";
 import { CreditScreen } from "./screens/Credit";
+import { StrategyScreen } from "./screens/Strategy";
+import { MoneyRailsScreen } from "./screens/MoneyRails";
+import { LegalScreen } from "./screens/Legal";
+import { UniversalAdapterDemo } from "./screens/UniversalAdapterDemo";
+import { JudgeCommandCenter } from "./screens/JudgeCommandCenter";
 import { api, clearSession, loadSession, type PublicUser } from "./lib/api";
-import { clearAllVaults, loadVault } from "./lib/deviceVault";
+import { clearAllVaults, loadVault, type DeviceVaultState } from "./lib/deviceVault";
+import { disableDemoMode, enableDemoMode, isDemoMode } from "./lib/productMode";
+import { publicUserFromVault } from "./lib/offlineUser";
+import { initNativeShell } from "./lib/nativeShell";
 import type { GuideAction, GuideStep } from "./lib/guideScript";
 import {
   makeSystemsEvent,
@@ -25,7 +37,9 @@ import {
 import "./styles/app.css";
 
 type View =
+  | "gate"
   | "intro"
+  | "welcome"
   | "menu"
   | "loading"
   | "boot"
@@ -33,16 +47,28 @@ type View =
   | "onboarding"
   | "zk-demo"
   | "wallet"
+  | "settings"
   | "recovery"
   | "merchant"
-  | "credit";
+  | "credit"
+  | "strategy"
+  | "truth"
+  | "universal"
+  | "judge"
+  | "rails"
+  | "privacy"
+  | "terms";
 
 export default function App() {
-  const [view, setView] = useState<View>("intro");
+  const [view, setView] = useState<View>("loading");
   const [user, setUser] = useState<PublicUser | null>(null);
+  const [vaultSnapshot, setVaultSnapshot] = useState<DeviceVaultState | null>(null);
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
-  const [loadDetail, setLoadDetail] = useState("Warming Midnight demo…");
+  const [loadDetail, setLoadDetail] = useState("Opening Circle…");
   const [settledOnce, setSettledOnce] = useState(false);
+  const [lastSettleGrade, setLastSettleGrade] = useState("");
+  const [proofMode, setProofMode] = useState("—");
+  const [proofServerOk, setProofServerOk] = useState<boolean | null>(null);
   const [liveProofs, setLiveProofs] = useState<
     { circuit: string; proof: string; label: string; ms?: number; snarkDigest?: string }[]
   >([]);
@@ -53,10 +79,12 @@ export default function App() {
   const [walletPhase, setWalletPhase] = useState("home");
   const [theaterFocus, setTheaterFocus] = useState<GuideStep["theaterFocus"] | null>(null);
   const [directorAuto, setDirectorAuto] = useState<"tour" | "explore" | null>(null);
-  const [menuIntent, setMenuIntent] = useState<MenuDestination | null>(null);
   const [systemsHistory, setSystemsHistory] = useState<SystemsEvent[]>([]);
   const [systemsCurrent, setSystemsCurrent] = useState<SystemsEvent | null>(null);
-  const [systemsOpen, setSystemsOpen] = useState(true);
+  const [systemsOpen, setSystemsOpen] = useState(false);
+  const [proofStrip, setProofStrip] = useState("");
+  const [demoMode, setDemoMode] = useState(() => isDemoMode());
+  const [booted, setBooted] = useState(false);
 
   const pushSystems = useCallback((partial: Omit<SystemsEvent, "id" | "at">) => {
     const ev = makeSystemsEvent(partial);
@@ -64,92 +92,151 @@ export default function App() {
     setSystemsHistory((prev) => [ev, ...prev].slice(0, 24));
   }, []);
 
-  useEffect(() => {
-    if (view === "intro" || view === "menu" || view === "loading") return;
-    setSystemsOpen(true);
-    pushSystems(narrativeForView(view));
-  }, [view, pushSystems]);
+  useEffect(() => initNativeShell(), []);
 
-  const systemsViewLabel = useMemo(() => {
-    const labels: Record<string, string> = {
-      wallet: "Voice wallet",
-      credit: "Circled Credit",
-      merchant: "Merchant receive",
-      onboarding: "ZK-KYC onboarding",
-      recovery: "Social recovery",
-      director: "Demo director",
-      "zk-demo": "Circuit triptych",
-      loading: "Boot",
-      boot: "Boot",
-    };
-    return labels[view] ?? view;
-  }, [view]);
-
-  /** After menu “Voice pay” — health check + restore session or open hub */
+  /** Cold start: restore session → wallet; first open → intro → welcome → menu. */
   useEffect(() => {
-    if (view !== "loading") return;
+    if (booted) return;
     let alive = true;
     (async () => {
+      setLoadDetail("Checking systems…");
       try {
-        setLoadDetail("Checking Midnight systems…");
         await api.health();
         if (!alive) return;
         setBackendOk(true);
-
-        if (menuIntent === "pay") {
-          setLoadDetail("Opening Class 0 vault…");
-          const sid = loadSession();
-          if (sid) {
-            try {
-              const vault = await loadVault(sid);
-              if (!vault) {
-                clearSession();
-              } else {
-                const { user: u } = await api.getUser(sid);
-                if (!alive) return;
-                setUser(u);
-                setGuided(false);
-                setLoadDetail("Restoring your demo…");
-                await new Promise((r) => setTimeout(r, 420));
-                if (!alive) return;
-                setMenuIntent(null);
-                setView("wallet");
-                return;
-              }
-            } catch {
-              clearSession();
-            }
-          }
-          setLoadDetail("Opening demo hub…");
-          await new Promise((r) => setTimeout(r, 400));
-          if (!alive) return;
-          setDirectorAuto(null);
-          setMenuIntent(null);
-          setView("director");
-          return;
-        }
-
-        setLoadDetail("Launching…");
-        await new Promise((r) => setTimeout(r, 360));
-        if (!alive) return;
-        setMenuIntent(null);
-        setView("director");
       } catch {
-        if (alive) {
-          setBackendOk(false);
-          setLoadDetail("Backend offline — opening demo shell…");
-          await new Promise((r) => setTimeout(r, 500));
-          if (alive) {
-            setMenuIntent(null);
-            setView("director");
+        if (!alive) return;
+        setBackendOk(false);
+      }
+
+      const sid = loadSession();
+      if (sid) {
+        setLoadDetail("Restoring your wallet…");
+        try {
+          const vault = await loadVault(sid);
+          if (vault) {
+            disableDemoMode();
+            setDemoMode(false);
+            setGuided(false);
+            setSystemsOpen(false);
+            try {
+              const { user: u } = await api.getUser(sid);
+              if (!alive) return;
+              setUser(u);
+            } catch {
+              if (!alive) return;
+              // Local vault is enough for offline widget use
+              setUser(publicUserFromVault(vault));
+              setBackendOk(false);
+            }
+            setVaultSnapshot(vault);
+            setBooted(true);
+            setView("wallet");
+            return;
           }
+          clearSession();
+        } catch {
+          // Keep session pointer if vault decrypt failed transiently — still show cinema
+          clearSession();
         }
       }
+
+      if (!alive) return;
+      setBooted(true);
+      setDemoMode(false);
+      setView("intro");
     })();
     return () => {
       alive = false;
     };
-  }, [view, menuIntent]);
+  }, [booted]);
+
+  useEffect(() => {
+    if (
+      view === "intro" ||
+      view === "menu" ||
+      view === "loading" ||
+      view === "gate" ||
+      view === "welcome"
+    ) {
+      return;
+    }
+    if (demoMode) setSystemsOpen(true);
+    // Avoid flooding the stream with identical idle narratives on every paint
+    const next = narrativeForView(view);
+    setSystemsCurrent((prev) => {
+      if (
+        prev &&
+        prev.title === next.title &&
+        prev.phase === next.phase &&
+        prev.status === next.status
+      ) {
+        return prev;
+      }
+      const ev = makeSystemsEvent(next);
+      setSystemsHistory((h) => {
+        if (h[0]?.title === ev.title && h[0]?.phase === ev.phase) return h;
+        return [ev, ...h].slice(0, 24);
+      });
+      return ev;
+    });
+  }, [view, demoMode]);
+
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try {
+        const h = await api.health();
+        if (!alive) return;
+        setBackendOk(true);
+        const ok = Boolean(h.proofMode?.proofServerOk);
+        const mode = String(h.proofMode?.mode ?? "—");
+        setProofServerOk(ok);
+        setProofMode(mode);
+        setProofStrip(
+          ok
+            ? `proofMode: ${mode} · SNARK`
+            : mode === "compact-runtime"
+              ? `proofMode: ${mode} · need proof-server for zk-proved`
+              : `proofMode: ${mode}`
+        );
+      } catch {
+        if (alive) {
+          setBackendOk(false);
+          setProofServerOk(false);
+          setProofMode("offline");
+          setProofStrip("Backend offline");
+        }
+      }
+    };
+    void tick();
+    const id = window.setInterval(tick, 2500);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  const systemsViewLabel = useMemo(() => {
+    const labels: Record<string, string> = {
+      wallet: "Voice wallet",
+      settings: "Settings",
+      credit: "Circle Credit",
+      strategy: "Private strategy",
+      merchant: "Merchant receive",
+      onboarding: "Onboarding",
+      recovery: "Recovery",
+      director: "Guided tour",
+      "zk-demo": "Circuit walkthrough",
+      universal: "Universal adapter",
+      judge: "Command center",
+      truth: "Real vs demo",
+      loading: "Boot",
+      boot: "Boot",
+      gate: "Welcome",
+    };
+    return labels[view] ?? view;
+  }, [view]);
 
   const pushGuideAction = useCallback((action: GuideAction) => {
     if (action.type === "highlightTheater") {
@@ -177,86 +264,89 @@ export default function App() {
     }
   }, []);
 
+  function handleSignOut() {
+    clearSession();
+    clearAllVaults();
+    disableDemoMode();
+    setUser(null);
+    setVaultSnapshot(null);
+    setLiveProofs([]);
+    setSystemsHistory([]);
+    setSystemsCurrent(null);
+    setSettledOnce(false);
+    setGuided(false);
+    setGuideCommand(null);
+    setTheaterFocus(null);
+    setDirectorAuto(null);
+    setSystemsOpen(false);
+    setDemoMode(false);
+    setView("menu");
+  }
+
+  function enterShowcase() {
+    enableDemoMode();
+    setDemoMode(true);
+  }
+
   function handleMenuSelect(dest: MenuDestination) {
-    setMenuIntent(dest);
-    if (dest === "pay") {
-      setView("loading");
+    if (dest === "truth") {
+      setDirectorAuto(null);
+      setView("truth");
       return;
     }
+
+    if (dest === "universal") {
+      enterShowcase();
+      setDirectorAuto(null);
+      setView("universal");
+      return;
+    }
+
+    if (dest === "judge") {
+      enterShowcase();
+      setDirectorAuto(null);
+      setView("judge");
+      return;
+    }
+
     if (dest === "tour") {
+      enterShowcase();
       setDirectorAuto("tour");
       setView("director");
       return;
     }
-    if (dest === "zk") {
-      setDirectorAuto("explore");
-      setView("director");
-      return;
-    }
-    if (dest === "merchant") {
-      setDirectorAuto(null);
-      setView("merchant");
-      return;
-    }
-    if (dest === "credit") {
-      setDirectorAuto(null);
-      if (user || loadSession()) {
-        void (async () => {
-          const sid = loadSession();
-          if (sid && !user) {
-            try {
-              const { user: u } = await api.getUser(sid);
-              setUser(u);
-              setView("credit");
-              return;
-            } catch {
-              /* fall through */
-            }
-          }
-          if (user) {
-            setView("credit");
-            return;
-          }
-          setView("onboarding");
-        })();
-        return;
-      }
-      setView("onboarding");
-      return;
-    }
-    if (dest === "onboarding") {
-      setDirectorAuto(null);
-      setView("onboarding");
-      return;
-    }
-    if (dest === "recovery") {
-      setDirectorAuto(null);
-      if (user || loadSession()) {
-        void (async () => {
-          const sid = loadSession();
-          if (sid && !user) {
-            try {
-              const { user: u } = await api.getUser(sid);
-              setUser(u);
-              setView("recovery");
-              return;
-            } catch {
-              /* fall through */
-            }
-          }
-          if (user) {
-            setView("recovery");
-            return;
-          }
-          setView("onboarding");
-        })();
-        return;
-      }
-      setView("onboarding");
-      return;
-    }
+
+    // circle — product path (no demo theater)
+    disableDemoMode();
+    setDemoMode(false);
+    setSystemsOpen(false);
+    setGuided(false);
     setDirectorAuto(null);
-    setView("director");
+    setGuideCommand(null);
+    void (async () => {
+      const sid = loadSession();
+      if (sid) {
+        try {
+          const vault = await loadVault(sid);
+          if (vault) {
+            try {
+              const { user: u } = await api.getUser(sid);
+              setUser(u);
+            } catch {
+              setUser(publicUserFromVault(vault));
+              setBackendOk(false);
+            }
+            setVaultSnapshot(vault);
+            setView("wallet");
+            return;
+          }
+          clearSession();
+        } catch {
+          /* fall through to gate */
+        }
+      }
+      setView("gate");
+    })();
   }
 
   const stageClass =
@@ -265,7 +355,13 @@ export default function App() {
       : "app__main app__main--with-systems";
 
   const showSystemsDock =
-    view !== "intro" && view !== "menu" && view !== "loading";
+    demoMode &&
+    view !== "intro" &&
+    view !== "welcome" &&
+    view !== "menu" &&
+    view !== "loading" &&
+    view !== "gate" &&
+    view !== "truth";
 
   const systemsPanel = showSystemsDock ? (
     <SystemsTheater
@@ -282,12 +378,64 @@ export default function App() {
     />
   ) : null;
 
+  /** Twin phone sits in the main row (horizontal) when open; tab stays when closed */
+  const systemsInline = systemsOpen ? systemsPanel : null;
+  const systemsTab = !systemsOpen ? systemsPanel : null;
+
+  if (view === "loading" && !booted) {
+    return <BootLoading detail={loadDetail} />;
+  }
+
+  if (view === "gate") {
+    return (
+      <ProductGate
+        backendOk={backendOk}
+        onCreateAccount={() => {
+          disableDemoMode();
+          setDemoMode(false);
+          setSystemsOpen(false);
+          setView("onboarding");
+        }}
+        onBackToMenu={() => setView("menu")}
+        onRestored={(u) => {
+          disableDemoMode();
+          setDemoMode(false);
+          setSystemsOpen(false);
+          setGuided(false);
+          setUser(u);
+          void loadVault(u.id).then(setVaultSnapshot);
+          setView("wallet");
+        }}
+      />
+    );
+  }
+
   if (view === "intro") {
-    return <IntroSplash onFinished={() => setView("menu")} />;
+    return <IntroSplash onFinished={() => setView("welcome")} />;
+  }
+
+  if (view === "welcome") {
+    return <WelcomeScreen onContinue={() => setView("menu")} />;
   }
 
   if (view === "menu") {
     return <MainMenu onSelect={handleMenuSelect} />;
+  }
+
+  if (view === "truth") {
+    return (
+      <JudgeTruthPanel
+        proofMode={proofMode}
+        proofServerOk={proofServerOk}
+        lastSettleGrade={lastSettleGrade}
+        onBack={() => setView("menu")}
+        onOpenTour={() => {
+          enterShowcase();
+          setDirectorAuto("tour");
+          setView("director");
+        }}
+      />
+    );
   }
 
   if (view === "loading") {
@@ -297,22 +445,44 @@ export default function App() {
   return (
     <div className={`app app--atelier ${systemsOpen && showSystemsDock ? "app--systems-open" : ""}`}>
       <InstallPrompt />
-      {systemsPanel}
+      {systemsTab}
       <header className="app__brand">
         <img src="/glyph.png" alt="" className="app__brand-glyph" />
         <div className="app__brand-copy">
           <p className="atelier-kicker">
-            {guided ? "Judge stage · guided" : "Midnight · Preprod"}
+            {guided
+              ? "Judge stage · guided · SNARK path"
+              : demoMode
+                ? "Showcase · Midnight"
+                : "Midnight · confidential voice"}
           </p>
-          <strong className="brand-mark">Circled</strong>
+          <strong className="brand-mark">Circle</strong>
           <span>
             {guided ? "Private money, spoken softly" : "Confidential voice payments"}
           </span>
         </div>
         {backendOk === false && <em className="pill warn">backend offline</em>}
         {backendOk && <em className="pill ok">systems live</em>}
-        {settledOnce && <em className="pill ok">settlement proven</em>}
-        {guided && view === "wallet" && (
+        {proofStrip && (
+          <em
+            className={`pill${
+              proofServerOk || proofStrip.includes("SNARK") ? " ok" : " warn"
+            }`}
+            title="Live Compact / proof-server mode"
+          >
+            {proofStrip}
+          </em>
+        )}
+        {lastSettleGrade && (
+          <em
+            className={`pill${lastSettleGrade === "zk-proved" ? " ok" : " warn"}`}
+            title="Last settlement attestation grade"
+          >
+            grade: {lastSettleGrade}
+          </em>
+        )}
+        {settledOnce && !lastSettleGrade && <em className="pill ok">settlement proven</em>}
+        {demoMode && guided && view === "wallet" && (
           <button
             type="button"
             className="pill"
@@ -322,7 +492,7 @@ export default function App() {
             Hide guide
           </button>
         )}
-        {!guided && view === "wallet" && user && (
+        {demoMode && !guided && view === "wallet" && user && (
           <button
             type="button"
             className="pill"
@@ -338,44 +508,30 @@ export default function App() {
           style={{ cursor: "pointer" }}
           onClick={() => {
             setDirectorAuto(null);
-            setMenuIntent(null);
+            setGuided(false);
+            if (!demoMode) {
+              setSystemsOpen(false);
+            }
             setView("menu");
           }}
         >
           Menu
         </button>
-        <button
-          type="button"
-          className="pill"
-          style={{ cursor: "pointer" }}
-          onClick={() => {
-            clearSession();
-            clearAllVaults();
-            setUser(null);
-            setLiveProofs([]);
-            setSystemsHistory([]);
-            setSystemsCurrent(null);
-            setSettledOnce(false);
-            setGuided(false);
-            setGuideCommand(null);
-            setTheaterFocus(null);
-            setDirectorAuto(null);
-            setView("menu");
-          }}
-        >
-          Reset demo
+        <button type="button" className="pill" style={{ cursor: "pointer" }} onClick={handleSignOut}>
+          Sign out
         </button>
       </header>
 
       {view === "merchant" && (
         <main className={stageClass}>
           <MerchantReceive
-            onBack={() => setView("menu")}
+            onBack={() => setView(user ? "settings" : "menu")}
             onSystemsEvent={(e) => {
               setSystemsCurrent(e);
               setSystemsHistory((prev) => [e, ...prev].slice(0, 24));
             }}
           />
+          {systemsInline}
         </main>
       )}
 
@@ -383,13 +539,30 @@ export default function App() {
         <main className={stageClass}>
           <CreditScreen
             user={user}
-            onBack={() => setView("menu")}
+            onBack={() => setView("settings")}
             onSystemsEvent={(e) => {
               setSystemsCurrent(e);
               setSystemsHistory((prev) => [e, ...prev].slice(0, 24));
             }}
             onLiveProofs={setLiveProofs}
           />
+          {systemsInline}
+        </main>
+      )}
+
+      {view === "strategy" && user && (
+        <main className={stageClass}>
+          <StrategyScreen
+            userId={user.id}
+            onBack={() => setView("settings")}
+            onSystemsEvent={(e) => {
+              const ev = makeSystemsEvent(e);
+              setSystemsCurrent(ev);
+              setSystemsHistory((prev) => [ev, ...prev].slice(0, 24));
+            }}
+            onLiveProofs={setLiveProofs}
+          />
+          {systemsInline}
         </main>
       )}
 
@@ -423,6 +596,7 @@ export default function App() {
               setView("onboarding");
             }}
           />
+          {systemsInline}
         </main>
       )}
 
@@ -443,15 +617,28 @@ export default function App() {
               setView("wallet");
             }}
           />
+          {systemsInline}
+        </main>
+      )}
+
+      {view === "universal" && (
+        <main className={stageClass}>
+          <UniversalAdapterDemo onBack={() => setView("menu")} />
+          {systemsInline}
         </main>
       )}
 
       {(view === "boot" ||
         view === "onboarding" ||
         view === "wallet" ||
+        view === "settings" ||
+        view === "rails" ||
+        view === "privacy" ||
+        view === "terms" ||
+        view === "judge" ||
         view === "recovery") && (
         <main className={stageClass}>
-          {guided && view === "wallet" && (
+          {demoMode && guided && view === "wallet" && (
             <GuideFriend
               walletPhase={walletPhase}
               onAction={(action, step) => {
@@ -460,7 +647,7 @@ export default function App() {
               }}
               onTheaterFocus={setTheaterFocus}
               onComplete={() => {
-                /* tour finished — keep stage open for Q&A */
+                /* tour finished */
               }}
             />
           )}
@@ -468,69 +655,140 @@ export default function App() {
           <PhoneFrame>
             {view === "boot" && (
               <div className="screen center">
-                <img src="/glyph.png" alt="Circled" className="boot-glyph" />
+                <img src="/glyph.png" alt="Circle" className="boot-glyph" />
               </div>
             )}
             {view === "onboarding" && (
               <Onboarding
                 onComplete={(u) => {
                   setUser(u);
+                  setGuided(false);
+                  setSystemsOpen(false);
+                  void loadVault(u.id).then(setVaultSnapshot);
                   setView("wallet");
                 }}
-                onShowZkDemo={(u) => {
-                  setUser(u);
-                  setView("zk-demo");
-                }}
+                onShowZkDemo={
+                  demoMode
+                    ? (u) => {
+                        setUser(u);
+                        setView("zk-demo");
+                      }
+                    : undefined
+                }
                 onSystemsEvent={(e) => {
+                  if (!demoMode) return;
                   setSystemsCurrent(e);
                   setSystemsHistory((prev) => [e, ...prev].slice(0, 24));
                 }}
               />
             )}
+            {view === "settings" && user && (
+              <SettingsScreen
+                user={user}
+                vault={vaultSnapshot}
+                onBack={() => setView("wallet")}
+                onRecovery={() => setView("recovery")}
+                onStrategy={() => setView("strategy")}
+                onCredit={() => setView("credit")}
+                onMerchant={() => setView("merchant")}
+                onMoneyRails={() => setView("rails")}
+                onPrivacy={() => setView("privacy")}
+                onTerms={() => setView("terms")}
+                onOpenShowcase={() => {
+                  enterShowcase();
+                  setView("menu");
+                }}
+                onSignOut={handleSignOut}
+              />
+            )}
+            {view === "rails" && (
+              <MoneyRailsScreen
+                vault={vaultSnapshot}
+                onVaultChange={setVaultSnapshot}
+                onBack={() => setView("settings")}
+              />
+            )}
+            {(view === "privacy" || view === "terms") && (
+              <LegalScreen
+                kind={view === "privacy" ? "privacy" : "terms"}
+                onBack={() => setView("settings")}
+              />
+            )}
+            {view === "judge" && (
+              <JudgeCommandCenter onBack={() => setView("menu")} />
+            )}
             {view === "wallet" && user && (
               <Wallet
                 user={user}
                 onUserChange={setUser}
+                backendOk={backendOk}
                 onOpenRecovery={() => setView("recovery")}
+                onOpenSettings={() => {
+                  void loadVault(user.id).then(setVaultSnapshot);
+                  setView("settings");
+                }}
                 onLiveProofs={(proofs) => {
                   setLiveProofs(proofs);
-                  if (proofs.length) {
+                  if (demoMode && proofs.length) {
                     pushSystems({
                       source: "wallet",
                       phase: walletPhase,
                       title: proofs.map((p) => p.label).join(" · "),
                       detail: `Live circuits: ${proofs.map((p) => p.circuit).join(", ")}`,
-                      layer:
-                        proofs.some((p) => p.circuit.includes("session"))
-                          ? "proof-server"
-                          : proofs.some((p) => p.circuit.includes("collateral") || p.circuit.includes("loan"))
-                            ? "pool"
-                            : "compact",
+                      layer: proofs.some((p) => p.circuit.includes("session"))
+                        ? "proof-server"
+                        : proofs.some(
+                              (p) =>
+                                p.circuit.includes("collateral") || p.circuit.includes("loan")
+                            )
+                          ? "pool"
+                          : "compact",
                       status: "proving",
                       intensity: 0.9,
                       circuits: proofs.map((p) => p.circuit),
                     });
                   }
                 }}
-                guideCommand={guided ? guideCommand : null}
+                guideCommand={demoMode && guided ? guideCommand : null}
                 guideCommandKey={guideCommandKey}
-                onPhaseChange={(phase) => {
+                onPhaseChange={(phase, meta) => {
                   setWalletPhase(phase);
-                  pushSystems(narrativeForWalletPhase(phase));
+                  if (demoMode) pushSystems(narrativeForWalletPhase(phase, meta));
                 }}
-                onSettled={() => {
+                onSettled={(grade, meta) => {
                   setSettledOnce(true);
+                  if (grade) setLastSettleGrade(grade);
                   setTheaterKey((k) => k + 1);
-                  pushSystems({
-                    source: "settle",
-                    phase: "settled",
-                    title: "Settlement anchored on Midnight",
-                    detail: "SNARKs verified · nullifiers burned · Compact transfer count advanced.",
-                    layer: "midnight",
-                    status: "settled",
-                    intensity: 0.55,
-                    circuits: liveProofs.map((p) => p.circuit),
-                  });
+                  void loadVault(user.id).then(setVaultSnapshot);
+                  if (demoMode) {
+                    if (meta?.kind === "credit") {
+                      pushSystems({
+                        source: "credit",
+                        phase: "loan-booked",
+                        title: meta.label || "Loan booked",
+                        detail:
+                          "Collateral locked · pool disbursement · credit_identity — not a P2P payment settle.",
+                        layer: "pool",
+                        status: "settled",
+                        intensity: 0.55,
+                        circuits: liveProofs.map((p) => p.circuit),
+                      });
+                    } else {
+                      pushSystems({
+                        source: "settle",
+                        phase: "settled",
+                        title: grade
+                          ? `Settlement · grade: ${grade}`
+                          : "Settlement anchored on Midnight",
+                        detail:
+                          "SNARKs verified · nullifiers burned · Compact transfer count advanced.",
+                        layer: "midnight",
+                        status: "settled",
+                        intensity: 0.55,
+                        circuits: liveProofs.map((p) => p.circuit),
+                      });
+                    }
+                  }
                 }}
               />
             )}
@@ -542,6 +800,7 @@ export default function App() {
               />
             )}
           </PhoneFrame>
+          {systemsInline}
         </main>
       )}
     </div>

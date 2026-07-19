@@ -1,4 +1,4 @@
-# Circled enterprise 10/10 posture
+# Circle enterprise 10/10 posture
 
 ## 1. Compact constraints (not bind-only)
 

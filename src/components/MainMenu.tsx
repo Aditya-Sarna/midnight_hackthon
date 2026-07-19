@@ -1,31 +1,53 @@
 import { useEffect, useRef, useState } from "react";
 
 export type MenuDestination =
-  | "pay"
-  | "tour"
-  | "zk"
-  | "onboarding"
-  | "recovery"
-  | "director"
-  | "merchant"
-  | "credit";
+  | "circle"
+  | "truth"
+  | "universal"
+  | "judge"
+  | "tour";
 
 type Item = {
   id: MenuDestination;
   index: string;
   label: string;
   hint: string;
+  hero?: boolean;
 };
 
+/** Lean judge menu — product + honesty + killer demo + gold path */
 const ITEMS: Item[] = [
-  { id: "pay", index: "I", label: "Voice pay", hint: "Speak amount and name" },
-  { id: "tour", index: "II", label: "Guided tour", hint: "Judge walkthrough" },
-  { id: "zk", index: "III", label: "ZK circuits", hint: "Proofs as they form" },
-  { id: "merchant", index: "IV", label: "Merchant receive", hint: "QR · private inbound" },
-  { id: "credit", index: "V", label: "Credit", hint: "Overcollateralized pool lend" },
-  { id: "onboarding", index: "VI", label: "Set up wallet", hint: "Class 0 on device" },
-  { id: "recovery", index: "VII", label: "Recovery", hint: "Threshold restore" },
-  { id: "director", index: "VIII", label: "Demo hub", hint: "Explore freely" },
+  {
+    id: "circle",
+    index: "●",
+    label: "Circle",
+    hint: "Product wallet · voice pay · Class 0 on device",
+    hero: true,
+  },
+  {
+    id: "truth",
+    index: "I",
+    label: "Real vs demo",
+    hint: "What is live · proofMode · honest boundaries",
+  },
+  {
+    id: "universal",
+    index: "II",
+    label: "Universal adapter",
+    hint: "Two phones · speak to pay · Stripe test · receiver notifies",
+  },
+  {
+    id: "judge",
+    index: "III",
+    label: "Command center",
+    hint: "Proof health · route IDs · lifecycle receipt",
+  },
+  {
+    id: "tour",
+    index: "IV",
+    label: "Guided tour",
+    hint: "Voice pay gold path · zk-proved settle",
+  },
 ];
 
 type Props = {
@@ -66,7 +88,7 @@ export function MainMenu({ onSelect }: Props) {
     <div
       className={`main-menu${ready ? " main-menu--ready" : ""}${videoOn ? " main-menu--live" : ""}${leaving ? " main-menu--leaving" : ""}`}
       role="navigation"
-      aria-label="Circled main menu"
+      aria-label="Circle main menu"
     >
       <div className="main-menu__art" aria-hidden>
         <div className="main-menu__film">
@@ -93,9 +115,12 @@ export function MainMenu({ onSelect }: Props) {
       <div className="main-menu__stage">
         <header className="main-menu__head">
           <img src="/glyph.png" alt="" className="main-menu__glyph" />
-          <p className="main-menu__kicker">Midnight · confidential voice</p>
-          <h1 className="main-menu__title">Circled</h1>
-          <p className="main-menu__lede">Private money, spoken softly.</p>
+          <p className="main-menu__kicker">Midnight · Circle</p>
+          <h1 className="main-menu__title">Circle</h1>
+          <p className="main-menu__lede">
+            Private authorization on Midnight. Speak a payment — prove the route, settle on the
+            rail the receiver accepts.
+          </p>
         </header>
 
         <nav className="main-menu__nav" aria-label="Destinations">
@@ -105,6 +130,7 @@ export function MainMenu({ onSelect }: Props) {
                 key={item.id}
                 style={{ ["--i" as string]: String(i) }}
                 className={[
+                  item.hero ? "is-hero" : "",
                   leaving === item.id ? "is-chosen" : "",
                   leaving && leaving !== item.id ? "is-dim" : "",
                   hover === item.id ? "is-hot" : "",
@@ -133,7 +159,7 @@ export function MainMenu({ onSelect }: Props) {
         </nav>
 
         <footer className="main-menu__foot">
-          <span>Choose a path</span>
+          <span>Credit · merchant · recovery live under Circle → Settings</span>
         </footer>
       </div>
     </div>

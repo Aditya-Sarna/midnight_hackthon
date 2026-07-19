@@ -16,7 +16,7 @@ type Props = {
 
 export function GuideFriend({ walletPhase, onAction, onTheaterFocus, onComplete }: Props) {
   const [idx, setIdx] = useState(0);
-  const [autoplay, setAutoplay] = useState(false);
+  const [autoplay, setAutoplay] = useState(true);
   const [typed, setTyped] = useState("");
   const [ready, setReady] = useState(false);
   const [waitMet, setWaitMet] = useState(false);

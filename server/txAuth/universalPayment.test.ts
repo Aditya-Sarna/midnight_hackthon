@@ -1,5 +1,5 @@
 /**
- * Circled universal (rail-agnostic) payment — Phases 1–8 exit criteria.
+ * Circle universal (rail-agnostic) payment — Phases 1–8 exit criteria.
  * Destination is opaque; rails differ only in adapters.
  */
 import { mkdtempSync, rmSync } from "node:fs";
@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
-describe("Circled universal rail-agnostic payment", () => {
+describe("Circle universal rail-agnostic payment", () => {
   const dirs: string[] = [];
 
   beforeEach(() => {

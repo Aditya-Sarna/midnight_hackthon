@@ -206,8 +206,8 @@ export function normalizeVoiceTranscript(raw: string): {
   parse = replaceSpokenNumbers(parse);
   display = replaceSpokenNumbers(display);
 
-  parse = parse.replace(/^(hey|hi|hello|yo|ok|okay)\s+(circled|nyx|pay)\s+/i, "");
-  parse = parse.replace(/^(circled|nyx)\s+/i, "");
+  parse = parse.replace(/^(hey|hi|hello|yo|ok|okay)\s+(circle|circled|nyx|pay)\s+/i, "");
+  parse = parse.replace(/^(circle|circled|nyx)\s+/i, "");
   parse = parse.replace(FILLERS_MULTI, " ").replace(HINGLISH_NAME_TRAILERS, " ").replace(/\s+/g, " ").trim();
 
   return {

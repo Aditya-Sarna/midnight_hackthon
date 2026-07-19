@@ -40,19 +40,45 @@ function digest(proof: Uint8Array): string {
   return createHash("sha256").update(proof).digest("hex");
 }
 
+type ProvingProvider = {
+  check: (preimage: unknown, circuitId: string) => Promise<unknown>;
+  prove: (preimage: unknown, circuitId: string) => Promise<Uint8Array>;
+};
+
+let cachedZk: NodeZkConfigProvider<string> | null = null;
+let cachedProving: ProvingProvider | null = null;
+let cachedProofServerUrl: string | null = null;
+const warmedCircuits = new Set<string>();
+
+function getProviders(): { zk: NodeZkConfigProvider<string>; proving: ProvingProvider } {
+  const cfg = requireMidnight();
+  if (!cachedZk || !cachedProving || cachedProofServerUrl !== cfg.proofServer) {
+    cachedZk = new NodeZkConfigProvider(MANAGED_DIR);
+    cachedProving = httpClientProvingProvider(cfg.proofServer, cachedZk, {
+      timeout: 90_000,
+    }) as ProvingProvider;
+    cachedProofServerUrl = cfg.proofServer;
+    warmedCircuits.clear();
+  }
+  return { zk: cachedZk, proving: cachedProving };
+}
+
+async function warmCircuit(circuitId: string): Promise<void> {
+  if (warmedCircuits.has(circuitId)) return;
+  const { zk } = getProviders();
+  await zk.getZKIR(circuitId);
+  await zk.getProverKey(circuitId);
+  warmedCircuits.add(circuitId);
+}
+
 /** Prove a single Compact circuit run against the proof-server. */
 export async function proveCircuit(
   circuitId: string,
   proofData: ProofData
 ): Promise<CircuitProveOk | CircuitProveFail> {
   try {
-    const cfg = requireMidnight();
-    const zk = new NodeZkConfigProvider(MANAGED_DIR);
-    const proving = httpClientProvingProvider(cfg.proofServer, zk, { timeout: 300_000 });
-
-    // Ensure keys resolve before prove
-    await zk.getZKIR(circuitId);
-    await zk.getProverKey(circuitId);
+    const { proving } = getProviders();
+    await warmCircuit(circuitId);
 
     const preimage = proofDataIntoSerializedPreimage(
       proofData.input,
@@ -62,7 +88,7 @@ export async function proveCircuit(
       circuitId
     );
 
-    await proving.check(preimage, circuitId);
+    // Skip redundant /check round-trip — prove fails fast on bad preimage.
     const proof = await proving.prove(preimage, circuitId);
     if (!(proof instanceof Uint8Array) || proof.byteLength < 32) {
       return { ok: false, circuit: circuitId, reason: "Empty or invalid SNARK from proof-server" };
@@ -83,13 +109,19 @@ export async function proveCircuit(
   }
 }
 
-/** Prove multiple circuit runs; all-or-nothing for settlement-grade ZK. */
+/** Prove multiple circuits in parallel (wall-clock ≈ slowest SNARK, not sum). */
 export async function proveCircuitBatch(
   runs: Array<{ circuit: string; proofData: ProofData }>
 ): Promise<BatchProveResult> {
+  // Warm keys once up front so parallel proves don't stampede disk
+  await Promise.all(runs.map((r) => warmCircuit(r.circuit)));
+
+  const results = await Promise.all(
+    runs.map((r) => proveCircuit(r.circuit, r.proofData))
+  );
+
   const proofs: CircuitProveOk[] = [];
-  for (const r of runs) {
-    const out = await proveCircuit(r.circuit, r.proofData);
+  for (const out of results) {
     if (!out.ok) {
       return { ok: false, reason: `${out.circuit}: ${out.reason}`, partial: proofs };
     }
@@ -98,4 +130,35 @@ export async function proveCircuitBatch(
   const digests: Record<string, string> = {};
   for (const p of proofs) digests[p.circuit] = p.proofDigest;
   return { ok: true, proofs, digests };
+}
+
+/** Prefetch prover keys / ZKIR so the first payment isn't cold. */
+export async function warmProverKeys(
+  circuits: string[] = [
+    "prove_session_auth",
+    "prove_recipient_valid",
+    "prove_policy_update",
+    "prove_spend_update",
+  ]
+): Promise<{ warmed: string[] }> {
+  const warmed: string[] = [];
+  await Promise.all(
+    circuits.map(async (c) => {
+      try {
+        await warmCircuit(c);
+        warmed.push(c);
+      } catch {
+        /* key may be absent */
+      }
+    })
+  );
+  return { warmed };
+}
+
+/** Test helper */
+export function resetZkProveCache() {
+  cachedZk = null;
+  cachedProving = null;
+  cachedProofServerUrl = null;
+  warmedCircuits.clear();
 }

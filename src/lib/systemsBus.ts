@@ -76,7 +76,73 @@ export function makeSystemsEvent(
 }
 
 /** Map wallet UI phase → theater narrative */
-export function narrativeForWalletPhase(phase: string): Omit<SystemsEvent, "id" | "at"> {
+export function narrativeForWalletPhase(
+  phase: string,
+  opts?: { credit?: boolean }
+): Omit<SystemsEvent, "id" | "at"> {
+  if (opts?.credit) {
+    const creditMap: Record<string, Omit<SystemsEvent, "id" | "at">> = {
+      verifying: {
+        source: "credit",
+        phase: "credit-verify",
+        title: "Checking loan terms",
+        detail: "Pool liquidity · collateral ≥150% · APR deal packages for the borrower.",
+        layer: "pool",
+        status: "proving",
+        intensity: 0.8,
+        circuits: ["prove_collateral_lock", "prove_credit_standing"],
+      },
+      ping: {
+        source: "credit",
+        phase: "credit-deals",
+        title: "Loan deals ready",
+        detail: "Borrower picks a term package. Nothing books until they Accept the APR.",
+        layer: "pool",
+        status: "active",
+        intensity: 0.55,
+      },
+      settling: {
+        source: "credit",
+        phase: "collateral-lock",
+        title: "Booking loan",
+        detail: "prove_collateral_lock · pool debit · disbursement into Class 0 balance.",
+        layer: "pool",
+        status: "proving",
+        intensity: 1,
+        circuits: ["prove_collateral_lock"],
+      },
+      settled: {
+        source: "credit",
+        phase: "loan-booked",
+        title: "Loan booked",
+        detail: "Collateral locked · CIRCLE units disbursed · credit_identity updated — not a P2P payment.",
+        layer: "pool",
+        status: "settled",
+        intensity: 0.55,
+        circuits: ["prove_collateral_lock", "circled-credit"],
+      },
+      denied: {
+        source: "credit",
+        phase: "loan-declined",
+        title: "Loan declined",
+        detail: "No collateral locked. Pool untouched.",
+        layer: "device",
+        status: "idle",
+        intensity: 0.15,
+      },
+      error: {
+        source: "credit",
+        phase: "loan-error",
+        title: "Loan booking failed",
+        detail: "Fail-closed: collateral, pool liquidity, or Compact witness — no loan opened.",
+        layer: "compact",
+        status: "error",
+        intensity: 0.4,
+      },
+    };
+    if (creditMap[phase]) return creditMap[phase];
+  }
+
   const map: Record<string, Omit<SystemsEvent, "id" | "at">> = {
     home: {
       source: "wallet",
@@ -128,7 +194,7 @@ export function narrativeForWalletPhase(phase: string): Omit<SystemsEvent, "id" 
       source: "wallet",
       phase: "settling",
       title: "Proof-server → Midnight",
-      detail: "SNARK prove · nullifier burn · Compact ledger update · optional CircledProof session.",
+      detail: "SNARK prove · nullifier burn · Compact ledger update · optional Circle session.",
       layer: "proof-server",
       status: "proving",
       intensity: 1,
@@ -189,7 +255,7 @@ export function narrativeForView(view: string): Omit<SystemsEvent, "id" | "at"> 
     menu: {
       source: "app",
       phase: "menu",
-      title: "Circled systems ready",
+      title: "Circle systems ready",
       detail: "Midnight Preprod · Compact circuits · Class 0 vault · proof-server path.",
       layer: "midnight",
       status: "idle",
@@ -204,6 +270,16 @@ export function narrativeForView(view: string): Omit<SystemsEvent, "id" | "at"> 
       status: "active",
       intensity: 0.5,
     },
+    strategy: {
+      source: "app",
+      phase: "strategy",
+      title: "Private strategy",
+      detail: "prove_strategy_commitment — weight is a private witness; ledger sees commitment only.",
+      layer: "compact",
+      status: "active",
+      intensity: 0.55,
+      circuits: ["prove_strategy_commitment"],
+    },
     onboarding: {
       source: "onboarding",
       phase: "onboarding",
@@ -217,7 +293,7 @@ export function narrativeForView(view: string): Omit<SystemsEvent, "id" | "at"> 
     credit: {
       source: "credit",
       phase: "credit-idle",
-      title: "Circled Credit pool",
+      title: "Circle Credit pool",
       detail: "Same-asset overcollateralized lending. Pool commitment · scoped credit_identity.",
       layer: "pool",
       status: "idle",
@@ -267,7 +343,7 @@ export function narrativeForView(view: string): Omit<SystemsEvent, "id" | "at"> 
       source: "app",
       phase: view,
       title: view,
-      detail: "Circled runtime",
+      detail: "Circle runtime",
       layer: "midnight",
       status: "idle",
       intensity: 0.3,

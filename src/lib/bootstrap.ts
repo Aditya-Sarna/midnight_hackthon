@@ -13,6 +13,7 @@ import {
   applySpend,
   clearAllVaults,
   createFreshVault,
+  createFreshVaultWithRecovery,
   loadVault,
   saveVault,
   type ContactRecord,
@@ -105,6 +106,80 @@ async function provisionalVault(displayName: string, balance: number) {
     initialBalance: balance,
   });
   return tmp;
+}
+
+/**
+ * Real product signup — single vault, no demo peers / seeded contacts.
+ * Class 0 secrets stay on-device; server stores commitments only.
+ * Requires a recovery passphrase so the user can restore on a new device.
+ */
+export async function bootstrapProductAccount(input: {
+  displayName: string;
+  documentRef: string;
+  recoveryPassphrase: string;
+  initialBalance?: number;
+}): Promise<{ user: PublicUser; vault: DeviceVaultState; recoveryKit: string }> {
+  const name = input.displayName.trim() || "You";
+  const pass = input.recoveryPassphrase.trim();
+  if (pass.length < 8) {
+    throw new Error("Recovery passphrase must be at least 8 characters");
+  }
+
+  // Product wallets start at zero — user adds money explicitly (no silent demo mint).
+  const provisional = await createFreshVaultWithRecovery({
+    userId: `tmp-${randomNonce(4)}`,
+    displayName: name,
+    credentialCommitment: "pending",
+    kycNullifier: "pending",
+    initialBalance: input.initialBalance ?? 0,
+  });
+  if (!provisional.recoveryJwks) {
+    throw new Error("Could not export recovery keys — try again");
+  }
+
+  const reg = await registerAccount({
+    displayName: name,
+    documentRef: input.documentRef,
+    vault: provisional.vault,
+  });
+  const vault: DeviceVaultState = {
+    ...reg.vaultState,
+    contacts: [],
+    paymentHistory: [],
+    demoPeerVaults: undefined,
+  };
+  await saveVault(vault, { activate: true });
+  saveSession(reg.user.id);
+
+  const { sealRecoveryKit, downloadRecoveryKit } = await import("./recoveryKit");
+  const recoveryKit = await sealRecoveryKit({
+    vault,
+    privateKeyJwk: provisional.recoveryJwks.privateKeyJwk,
+    encPrivateKeyJwk: provisional.recoveryJwks.encPrivateKeyJwk,
+    passphrase: pass,
+  });
+  try {
+    localStorage.setItem(`circle_recovery_kit_${vault.userId}`, recoveryKit);
+  } catch {
+    /* ignore */
+  }
+  // Cloud backup = passphrase kit (restorable on any device with the passphrase)
+  try {
+    await fetch(`/api/users/${encodeURIComponent(vault.userId)}/vault/enroll`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vaultCiphertext: recoveryKit }),
+    });
+  } catch {
+    /* non-fatal — local kit still downloaded */
+  }
+  try {
+    downloadRecoveryKit(recoveryKit, name);
+  } catch {
+    /* ignore popup blockers */
+  }
+
+  return { user: reg.user, vault, recoveryKit };
 }
 
 export async function bootstrapProductionDemo(opts?: { documentRef?: string }): Promise<{
@@ -304,99 +379,192 @@ export async function clientIntent(
   if (!amount || !recipient) {
     return { ok: false as const, reason: "Say an amount and a name" };
   }
+  let newContact = false;
   if (!findContact(vault, recipient)) {
-    // Production builds refuse auto-enroll (pay-anyone only in soft/dev demos).
-    const strictContacts =
-      import.meta.env.VITE_STRICT_CONTACTS === "1" ||
-      (import.meta.env.PROD && import.meta.env.VITE_STRICT_CONTACTS !== "0");
-    if (strictContacts) {
+    // Opt-in strict mode: require Contacts enrollment before pay.
+    // Default product path auto-enrolls a payable contact so voice pay works day one.
+    if (import.meta.env.VITE_STRICT_CONTACTS === "1") {
       return {
         ok: false as const,
-        reason: "Unknown recipient — enroll this contact before paying",
+        reason: "Unknown recipient — add them in Contacts before paying",
       };
     }
     vault = await ensurePayableContact(vault, recipient.trim());
+    newContact = true;
   }
 
-  const ctx = await fetch(`/api/users/${userId}/prove-context`).then((r) => r.json());
-  return buildIntent(vault, {
+  const ac = new AbortController();
+  const t = window.setTimeout(() => ac.abort(), 45_000);
+  let kycRoot = "";
+  try {
+    const res = await fetch(`/api/users/${userId}/prove-context`, { signal: ac.signal });
+    const ctx = (await res.json()) as { kycRoot?: string };
+    kycRoot = String(ctx.kycRoot ?? "");
+    if (!kycRoot) {
+      return { ok: false as const, reason: "Could not load prove context" };
+    }
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      return { ok: false as const, reason: "Network timed out — check connection and retry" };
+    }
+    throw e;
+  } finally {
+    window.clearTimeout(t);
+  }
+  const intent = await buildIntent(vault, {
     amount,
     recipient,
     category: payload.category || "general",
-    kycRoot: ctx.kycRoot,
+    kycRoot,
   });
+  if (!intent.ok) return intent;
+  return { ...intent, newContact };
 }
 
-export async function clientConfirm(
+export type PreparedConfirm = {
+  intentCommitment: string;
+  signature: string;
+  sessionProof: Awaited<ReturnType<typeof provePaymentSessionAuth>>["sessionProof"];
+  timeWindow: string;
+  encrypted: Awaited<ReturnType<typeof encryptNoteToRecipient>>;
+  noteCommitment: string;
+  travel: Awaited<ReturnType<typeof import("./travelRule").maybeIssueTravelRuleDisclosure>>;
+};
+
+/** Prefetch while Accept sheet is open — Accept then only hits /confirm. */
+export async function prepareConfirm(
   userId: string,
   pending: Awaited<ReturnType<typeof buildIntent>>,
   opts?: { note?: string }
-) {
+): Promise<PreparedConfirm> {
   if (!pending.ok) throw new Error(pending.reason);
   const vault = await loadVault(userId);
   if (!vault) throw new Error("Device vault missing");
-
-  const signature = await signIntent(vault, pending.pending.intentCommitment);
   const contact = vault.contacts.find((c) => c.label === pending.pending.recipientLabel);
   if (!contact) throw new Error("Contact missing");
-
-  const { maybeIssueTravelRuleDisclosure } = await import("./travelRule");
-  const travel = await maybeIssueTravelRuleDisclosure({
-    amount: pending.pending.amount,
-    userId,
-    intentCommitment: pending.pending.intentCommitment,
-  });
-
-  const ctx = await fetch(`/api/users/${userId}/prove-context`).then((r) => r.json());
-  const { sessionProof, timeWindow } = await provePaymentSessionAuth(
-    vault,
-    pending.pending.intentCommitment,
-    ctx.kycRoot
-  );
 
   const notePayload = {
     amount: pending.pending.amount,
     fromCommitment: vault.credentialCommitment,
     memo: opts?.note?.trim() || "circled-transfer",
   };
-  const encrypted = await encryptNoteToRecipient(
-    contact.recipientEncPublicKeyJwk,
-    notePayload
-  );
-  const noteCommitment = await commit(
-    JSON.stringify({ amount: pending.pending.amount, to: contact.recipientPubkey }),
-    randomNonce()
+
+  const { maybeIssueTravelRuleDisclosure } = await import("./travelRule");
+  void fetch("/api/health").catch(() => null);
+
+  const [signature, travel, ctx, encrypted, noteCommitment] = await Promise.all([
+    signIntent(vault, pending.pending.intentCommitment),
+    maybeIssueTravelRuleDisclosure({
+      amount: pending.pending.amount,
+      userId,
+      intentCommitment: pending.pending.intentCommitment,
+    }),
+    fetch(`/api/users/${userId}/prove-context`).then((r) => r.json()),
+    encryptNoteToRecipient(contact.recipientEncPublicKeyJwk, notePayload),
+    commit(
+      JSON.stringify({ amount: pending.pending.amount, to: contact.recipientPubkey }),
+      randomNonce()
+    ),
+  ]);
+
+  const { sessionProof, timeWindow } = await provePaymentSessionAuth(
+    vault,
+    pending.pending.intentCommitment,
+    ctx.kycRoot
   );
 
-  const res = await fetch(`/api/users/${userId}/confirm`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      intentCommitment: pending.pending.intentCommitment,
-      signature,
-      spendNullifier: pending.pending.spendNullifier,
-      oldBalanceCommitment: pending.pending.oldBalanceCommitment,
-      newBalanceCommitment: pending.pending.newBalanceCommitment,
-      newPolicyCommitment: pending.pending.newPolicyCommitment,
-      recipientPubkey: pending.pending.recipientPubkey,
-      recipientProof: pending.pending.recipientProof,
-      policyProof: pending.pending.policyProof,
-      spendProof: pending.pending.spendProof,
-      sessionAuth: sessionProof,
-      sessionAuthTimeWindow: timeWindow,
-      balanceWitness: pending.pending.balanceWitness,
-      encryptedNote: {
-        ephemeralPublicKeyJwk: encrypted.ephemeralPublicKeyJwk,
-        ciphertext: encrypted.ciphertext,
-        noteCommitment,
-      },
-    }),
-  });
+  return {
+    intentCommitment: pending.pending.intentCommitment,
+    signature,
+    sessionProof,
+    timeWindow,
+    encrypted,
+    noteCommitment,
+    travel,
+  };
+}
+
+export async function clientConfirm(
+  userId: string,
+  pending: Awaited<ReturnType<typeof buildIntent>>,
+  opts?: {
+    note?: string;
+    prepared?: PreparedConfirm | null;
+    stepUp?: { kind: "passkey" | "biometric"; at?: number };
+  }
+) {
+  if (!pending.ok) throw new Error(pending.reason);
+  const vault = await loadVault(userId);
+  if (!vault) throw new Error("Device vault missing");
+
+  const contact = vault.contacts.find((c) => c.label === pending.pending.recipientLabel);
+  if (!contact) throw new Error("Contact missing");
+
+  const prepared =
+    opts?.prepared && opts.prepared.intentCommitment === pending.pending.intentCommitment
+      ? opts.prepared
+      : await prepareConfirm(userId, pending, opts);
+
+  const { signature, sessionProof, timeWindow, encrypted, noteCommitment, travel } = prepared;
+
+  const ac = new AbortController();
+  const settleTimer = window.setTimeout(() => ac.abort(), 90_000);
+  let res: Response;
+  try {
+    res = await fetch(`/api/users/${userId}/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: ac.signal,
+      body: JSON.stringify({
+        intentCommitment: pending.pending.intentCommitment,
+        signature,
+        spendNullifier: pending.pending.spendNullifier,
+        oldBalanceCommitment: pending.pending.oldBalanceCommitment,
+        newBalanceCommitment: pending.pending.newBalanceCommitment,
+        newPolicyCommitment: pending.pending.newPolicyCommitment,
+        recipientPubkey: pending.pending.recipientPubkey,
+        recipientProof: pending.pending.recipientProof,
+        policyProof: pending.pending.policyProof,
+        spendProof: pending.pending.spendProof,
+        sessionAuth: sessionProof,
+        sessionAuthTimeWindow: timeWindow,
+        balanceWitness: pending.pending.balanceWitness,
+        encryptedNote: {
+          ephemeralPublicKeyJwk: encrypted.ephemeralPublicKeyJwk,
+          ciphertext: encrypted.ciphertext,
+          noteCommitment,
+        },
+        stepUp: opts?.stepUp,
+      }),
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw new Error("Settlement timed out — check connection and retry");
+    }
+    throw e;
+  } finally {
+    window.clearTimeout(settleTimer);
+  }
   const data = await res.json();
   if (!res.ok || !data.ok) throw new Error(data.reason || data.error || "Settlement failed");
 
+  // Persist openings before local apply so Repair can finish if saveVault fails mid-flight.
+  const { savePendingLocalApply, clearPendingLocalApply } = await import("./pendingApply");
+  savePendingLocalApply({
+    userId,
+    amount: pending.pending.amount,
+    recipient: pending.pending.recipientLabel,
+    category: pending.pending.category || "general",
+    countersNext: pending.pending.policyWitness.countersNext,
+    balanceNonce: pending.pending.newBalanceNonce,
+    balanceOpening: pending.pending.newBalanceOpening,
+    balanceCommitment: pending.pending.newBalanceCommitment,
+    policyNonce: pending.pending.newPolicyNonce,
+    policyCommitment: pending.pending.newPolicyCommitment,
+    savedAt: Date.now(),
+  });
+
   // Apply Class 0 spend locally — must reuse the same openings submitted to the server.
-  // If this fails after server commit, surface a recovery error (do not silent-desync).
   let next: DeviceVaultState;
   try {
     next = await applySpend(
@@ -415,26 +583,21 @@ export async function clientConfirm(
         category: pending.pending.category || "general",
       }
     );
+    clearPendingLocalApply();
   } catch (e) {
     throw new Error(
-      `Settled on ledger but device vault failed to apply — reload and check balance. ${
+      `Settled on ledger but device vault failed to apply — tap Repair vault. ${
         e instanceof Error ? e.message : ""
       }`.trim()
     );
   }
 
-  // Demo: auto-claim into matching peer vault if present on device
+  // Demo peer claim — don't block the payer's success UI
   const peerEntry = Object.entries(next.demoPeerVaults ?? {}).find(
     ([, v]) => v.keypair.pubkey === contact.recipientPubkey
   );
   if (peerEntry) {
-    try {
-      await claimNotesForPeer(peerEntry[0], peerEntry[1]);
-      const refreshed = await loadVault(userId);
-      if (refreshed) Object.assign(next, refreshed);
-    } catch {
-      /* peer claim best-effort in same-browser demo */
-    }
+    void claimNotesForPeer(peerEntry[0], peerEntry[1]).catch(() => undefined);
   }
 
   return { ...data, vault: next, sessionProof, travelRule: travel };

@@ -239,6 +239,12 @@ export class Contract {
     if (typeof(witnesses_0.standingMaxDefOpening) !== 'function') {
       throw new __compactRuntime.CompactError('first (witnesses) argument to Contract constructor does not contain a function-valued field named standingMaxDefOpening');
     }
+    if (typeof(witnesses_0.strategyWeight) !== 'function') {
+      throw new __compactRuntime.CompactError('first (witnesses) argument to Contract constructor does not contain a function-valued field named strategyWeight');
+    }
+    if (typeof(witnesses_0.strategyOpening) !== 'function') {
+      throw new __compactRuntime.CompactError('first (witnesses) argument to Contract constructor does not contain a function-valued field named strategyOpening');
+    }
     this.witnesses = witnesses_0;
     this.circuits = {
       publish_kyc_root: (...args_1) => {
@@ -250,14 +256,14 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('publish_kyc_root',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 72 char 1',
+                                     'nyxpay.compact line 78 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(root_0.buffer instanceof ArrayBuffer && root_0.BYTES_PER_ELEMENT === 1 && root_0.length === 32)) {
           __compactRuntime.typeError('publish_kyc_root',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 72 char 1',
+                                     'nyxpay.compact line 78 char 1',
                                      'Bytes<32>',
                                      root_0)
         }
@@ -286,14 +292,14 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('publish_settlement_anchor',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 81 char 1',
+                                     'nyxpay.compact line 87 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(settlement_id_0.buffer instanceof ArrayBuffer && settlement_id_0.BYTES_PER_ELEMENT === 1 && settlement_id_0.length === 32)) {
           __compactRuntime.typeError('publish_settlement_anchor',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 81 char 1',
+                                     'nyxpay.compact line 87 char 1',
                                      'Bytes<32>',
                                      settlement_id_0)
         }
@@ -322,14 +328,14 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('publish_kyc_leaf',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 92 char 1',
+                                     'nyxpay.compact line 98 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(leaf_0.buffer instanceof ArrayBuffer && leaf_0.BYTES_PER_ELEMENT === 1 && leaf_0.length === 32)) {
           __compactRuntime.typeError('publish_kyc_leaf',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 92 char 1',
+                                     'nyxpay.compact line 98 char 1',
                                      'Bytes<32>',
                                      leaf_0)
         }
@@ -359,21 +365,21 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('prove_kyc_membership',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 100 char 1',
+                                     'nyxpay.compact line 106 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(leaf_0.buffer instanceof ArrayBuffer && leaf_0.BYTES_PER_ELEMENT === 1 && leaf_0.length === 32)) {
           __compactRuntime.typeError('prove_kyc_membership',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 100 char 1',
+                                     'nyxpay.compact line 106 char 1',
                                      'Bytes<32>',
                                      leaf_0)
         }
         if (!(root_0.buffer instanceof ArrayBuffer && root_0.BYTES_PER_ELEMENT === 1 && root_0.length === 32)) {
           __compactRuntime.typeError('prove_kyc_membership',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nyxpay.compact line 100 char 1',
+                                     'nyxpay.compact line 106 char 1',
                                      'Bytes<32>',
                                      root_0)
         }
@@ -405,28 +411,28 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('prove_recipient_valid',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 112 char 1',
+                                     'nyxpay.compact line 118 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(leaf_0.buffer instanceof ArrayBuffer && leaf_0.BYTES_PER_ELEMENT === 1 && leaf_0.length === 32)) {
           __compactRuntime.typeError('prove_recipient_valid',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 112 char 1',
+                                     'nyxpay.compact line 118 char 1',
                                      'Bytes<32>',
                                      leaf_0)
         }
         if (!(root_0.buffer instanceof ArrayBuffer && root_0.BYTES_PER_ELEMENT === 1 && root_0.length === 32)) {
           __compactRuntime.typeError('prove_recipient_valid',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nyxpay.compact line 112 char 1',
+                                     'nyxpay.compact line 118 char 1',
                                      'Bytes<32>',
                                      root_0)
         }
         if (!(contact_commitment_0.buffer instanceof ArrayBuffer && contact_commitment_0.BYTES_PER_ELEMENT === 1 && contact_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_recipient_valid',
                                      'argument 3 (argument 4 as invoked from Typescript)',
-                                     'nyxpay.compact line 112 char 1',
+                                     'nyxpay.compact line 118 char 1',
                                      'Bytes<32>',
                                      contact_commitment_0)
         }
@@ -458,21 +464,21 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('prove_policy_update',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 132 char 1',
+                                     'nyxpay.compact line 138 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(old_policy_commitment_0.buffer instanceof ArrayBuffer && old_policy_commitment_0.BYTES_PER_ELEMENT === 1 && old_policy_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_policy_update',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 132 char 1',
+                                     'nyxpay.compact line 138 char 1',
                                      'Bytes<32>',
                                      old_policy_commitment_0)
         }
         if (!(new_policy_commitment_0.buffer instanceof ArrayBuffer && new_policy_commitment_0.BYTES_PER_ELEMENT === 1 && new_policy_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_policy_update',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nyxpay.compact line 132 char 1',
+                                     'nyxpay.compact line 138 char 1',
                                      'Bytes<32>',
                                      new_policy_commitment_0)
         }
@@ -504,28 +510,28 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('prove_spend_update',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 153 char 1',
+                                     'nyxpay.compact line 159 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(old_balance_commitment_0.buffer instanceof ArrayBuffer && old_balance_commitment_0.BYTES_PER_ELEMENT === 1 && old_balance_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_spend_update',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 153 char 1',
+                                     'nyxpay.compact line 159 char 1',
                                      'Bytes<32>',
                                      old_balance_commitment_0)
         }
         if (!(new_balance_commitment_0.buffer instanceof ArrayBuffer && new_balance_commitment_0.BYTES_PER_ELEMENT === 1 && new_balance_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_spend_update',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nyxpay.compact line 153 char 1',
+                                     'nyxpay.compact line 159 char 1',
                                      'Bytes<32>',
                                      new_balance_commitment_0)
         }
         if (!(recipient_proof_digest_0.buffer instanceof ArrayBuffer && recipient_proof_digest_0.BYTES_PER_ELEMENT === 1 && recipient_proof_digest_0.length === 32)) {
           __compactRuntime.typeError('prove_spend_update',
                                      'argument 3 (argument 4 as invoked from Typescript)',
-                                     'nyxpay.compact line 153 char 1',
+                                     'nyxpay.compact line 159 char 1',
                                      'Bytes<32>',
                                      recipient_proof_digest_0)
         }
@@ -558,28 +564,28 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('prove_credit_update',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 191 char 1',
+                                     'nyxpay.compact line 197 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(old_balance_commitment_0.buffer instanceof ArrayBuffer && old_balance_commitment_0.BYTES_PER_ELEMENT === 1 && old_balance_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_credit_update',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 191 char 1',
+                                     'nyxpay.compact line 197 char 1',
                                      'Bytes<32>',
                                      old_balance_commitment_0)
         }
         if (!(new_balance_commitment_0.buffer instanceof ArrayBuffer && new_balance_commitment_0.BYTES_PER_ELEMENT === 1 && new_balance_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_credit_update',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nyxpay.compact line 191 char 1',
+                                     'nyxpay.compact line 197 char 1',
                                      'Bytes<32>',
                                      new_balance_commitment_0)
         }
         if (!(inbound_proof_digest_0.buffer instanceof ArrayBuffer && inbound_proof_digest_0.BYTES_PER_ELEMENT === 1 && inbound_proof_digest_0.length === 32)) {
           __compactRuntime.typeError('prove_credit_update',
                                      'argument 3 (argument 4 as invoked from Typescript)',
-                                     'nyxpay.compact line 191 char 1',
+                                     'nyxpay.compact line 197 char 1',
                                      'Bytes<32>',
                                      inbound_proof_digest_0)
         }
@@ -614,42 +620,42 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('prove_session_auth',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 225 char 1',
+                                     'nyxpay.compact line 231 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(leaf_0.buffer instanceof ArrayBuffer && leaf_0.BYTES_PER_ELEMENT === 1 && leaf_0.length === 32)) {
           __compactRuntime.typeError('prove_session_auth',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 225 char 1',
+                                     'nyxpay.compact line 231 char 1',
                                      'Bytes<32>',
                                      leaf_0)
         }
         if (!(root_0.buffer instanceof ArrayBuffer && root_0.BYTES_PER_ELEMENT === 1 && root_0.length === 32)) {
           __compactRuntime.typeError('prove_session_auth',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nyxpay.compact line 225 char 1',
+                                     'nyxpay.compact line 231 char 1',
                                      'Bytes<32>',
                                      root_0)
         }
         if (!(challenge_0.buffer instanceof ArrayBuffer && challenge_0.BYTES_PER_ELEMENT === 1 && challenge_0.length === 32)) {
           __compactRuntime.typeError('prove_session_auth',
                                      'argument 3 (argument 4 as invoked from Typescript)',
-                                     'nyxpay.compact line 225 char 1',
+                                     'nyxpay.compact line 231 char 1',
                                      'Bytes<32>',
                                      challenge_0)
         }
         if (!(relying_party_id_0.buffer instanceof ArrayBuffer && relying_party_id_0.BYTES_PER_ELEMENT === 1 && relying_party_id_0.length === 32)) {
           __compactRuntime.typeError('prove_session_auth',
                                      'argument 4 (argument 5 as invoked from Typescript)',
-                                     'nyxpay.compact line 225 char 1',
+                                     'nyxpay.compact line 231 char 1',
                                      'Bytes<32>',
                                      relying_party_id_0)
         }
         if (!(time_window_0.buffer instanceof ArrayBuffer && time_window_0.BYTES_PER_ELEMENT === 1 && time_window_0.length === 32)) {
           __compactRuntime.typeError('prove_session_auth',
                                      'argument 5 (argument 6 as invoked from Typescript)',
-                                     'nyxpay.compact line 225 char 1',
+                                     'nyxpay.compact line 231 char 1',
                                      'Bytes<32>',
                                      time_window_0)
         }
@@ -689,42 +695,42 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('prove_authorized_transaction',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 252 char 1',
+                                     'nyxpay.compact line 258 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(leaf_0.buffer instanceof ArrayBuffer && leaf_0.BYTES_PER_ELEMENT === 1 && leaf_0.length === 32)) {
           __compactRuntime.typeError('prove_authorized_transaction',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 252 char 1',
+                                     'nyxpay.compact line 258 char 1',
                                      'Bytes<32>',
                                      leaf_0)
         }
         if (!(brand_registry_root_0.buffer instanceof ArrayBuffer && brand_registry_root_0.BYTES_PER_ELEMENT === 1 && brand_registry_root_0.length === 32)) {
           __compactRuntime.typeError('prove_authorized_transaction',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nyxpay.compact line 252 char 1',
+                                     'nyxpay.compact line 258 char 1',
                                      'Bytes<32>',
                                      brand_registry_root_0)
         }
         if (!(platform_challenge_0.buffer instanceof ArrayBuffer && platform_challenge_0.BYTES_PER_ELEMENT === 1 && platform_challenge_0.length === 32)) {
           __compactRuntime.typeError('prove_authorized_transaction',
                                      'argument 3 (argument 4 as invoked from Typescript)',
-                                     'nyxpay.compact line 252 char 1',
+                                     'nyxpay.compact line 258 char 1',
                                      'Bytes<32>',
                                      platform_challenge_0)
         }
         if (!(intent_commitment_0.buffer instanceof ArrayBuffer && intent_commitment_0.BYTES_PER_ELEMENT === 1 && intent_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_authorized_transaction',
                                      'argument 4 (argument 5 as invoked from Typescript)',
-                                     'nyxpay.compact line 252 char 1',
+                                     'nyxpay.compact line 258 char 1',
                                      'Bytes<32>',
                                      intent_commitment_0)
         }
         if (!(intent_signature_0.buffer instanceof ArrayBuffer && intent_signature_0.BYTES_PER_ELEMENT === 1 && intent_signature_0.length === 32)) {
           __compactRuntime.typeError('prove_authorized_transaction',
                                      'argument 5 (argument 6 as invoked from Typescript)',
-                                     'nyxpay.compact line 252 char 1',
+                                     'nyxpay.compact line 258 char 1',
                                      'Bytes<32>',
                                      intent_signature_0)
         }
@@ -760,35 +766,35 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('prove_collateral_lock',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 287 char 1',
+                                     'nyxpay.compact line 293 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(old_balance_commitment_0.buffer instanceof ArrayBuffer && old_balance_commitment_0.BYTES_PER_ELEMENT === 1 && old_balance_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_collateral_lock',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 287 char 1',
+                                     'nyxpay.compact line 293 char 1',
                                      'Bytes<32>',
                                      old_balance_commitment_0)
         }
         if (!(new_balance_commitment_0.buffer instanceof ArrayBuffer && new_balance_commitment_0.BYTES_PER_ELEMENT === 1 && new_balance_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_collateral_lock',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nyxpay.compact line 287 char 1',
+                                     'nyxpay.compact line 293 char 1',
                                      'Bytes<32>',
                                      new_balance_commitment_0)
         }
         if (!(collateral_commitment_0.buffer instanceof ArrayBuffer && collateral_commitment_0.BYTES_PER_ELEMENT === 1 && collateral_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_collateral_lock',
                                      'argument 3 (argument 4 as invoked from Typescript)',
-                                     'nyxpay.compact line 287 char 1',
+                                     'nyxpay.compact line 293 char 1',
                                      'Bytes<32>',
                                      collateral_commitment_0)
         }
         if (!(loan_commitment_0.buffer instanceof ArrayBuffer && loan_commitment_0.BYTES_PER_ELEMENT === 1 && loan_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_collateral_lock',
                                      'argument 4 (argument 5 as invoked from Typescript)',
-                                     'nyxpay.compact line 287 char 1',
+                                     'nyxpay.compact line 293 char 1',
                                      'Bytes<32>',
                                      loan_commitment_0)
         }
@@ -823,35 +829,35 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('prove_pool_deposit',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 337 char 1',
+                                     'nyxpay.compact line 343 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(old_pool_commitment_0.buffer instanceof ArrayBuffer && old_pool_commitment_0.BYTES_PER_ELEMENT === 1 && old_pool_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_pool_deposit',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 337 char 1',
+                                     'nyxpay.compact line 343 char 1',
                                      'Bytes<32>',
                                      old_pool_commitment_0)
         }
         if (!(new_pool_commitment_0.buffer instanceof ArrayBuffer && new_pool_commitment_0.BYTES_PER_ELEMENT === 1 && new_pool_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_pool_deposit',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nyxpay.compact line 337 char 1',
+                                     'nyxpay.compact line 343 char 1',
                                      'Bytes<32>',
                                      new_pool_commitment_0)
         }
         if (!(old_lender_balance_commitment_0.buffer instanceof ArrayBuffer && old_lender_balance_commitment_0.BYTES_PER_ELEMENT === 1 && old_lender_balance_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_pool_deposit',
                                      'argument 3 (argument 4 as invoked from Typescript)',
-                                     'nyxpay.compact line 337 char 1',
+                                     'nyxpay.compact line 343 char 1',
                                      'Bytes<32>',
                                      old_lender_balance_commitment_0)
         }
         if (!(new_lender_balance_commitment_0.buffer instanceof ArrayBuffer && new_lender_balance_commitment_0.BYTES_PER_ELEMENT === 1 && new_lender_balance_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_pool_deposit',
                                      'argument 4 (argument 5 as invoked from Typescript)',
-                                     'nyxpay.compact line 337 char 1',
+                                     'nyxpay.compact line 343 char 1',
                                      'Bytes<32>',
                                      new_lender_balance_commitment_0)
         }
@@ -886,35 +892,35 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('prove_loan_repayment',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 384 char 1',
+                                     'nyxpay.compact line 390 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(loan_commitment_old_0.buffer instanceof ArrayBuffer && loan_commitment_old_0.BYTES_PER_ELEMENT === 1 && loan_commitment_old_0.length === 32)) {
           __compactRuntime.typeError('prove_loan_repayment',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 384 char 1',
+                                     'nyxpay.compact line 390 char 1',
                                      'Bytes<32>',
                                      loan_commitment_old_0)
         }
         if (!(loan_commitment_new_0.buffer instanceof ArrayBuffer && loan_commitment_new_0.BYTES_PER_ELEMENT === 1 && loan_commitment_new_0.length === 32)) {
           __compactRuntime.typeError('prove_loan_repayment',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nyxpay.compact line 384 char 1',
+                                     'nyxpay.compact line 390 char 1',
                                      'Bytes<32>',
                                      loan_commitment_new_0)
         }
         if (!(installment_nullifier_0.buffer instanceof ArrayBuffer && installment_nullifier_0.BYTES_PER_ELEMENT === 1 && installment_nullifier_0.length === 32)) {
           __compactRuntime.typeError('prove_loan_repayment',
                                      'argument 3 (argument 4 as invoked from Typescript)',
-                                     'nyxpay.compact line 384 char 1',
+                                     'nyxpay.compact line 390 char 1',
                                      'Bytes<32>',
                                      installment_nullifier_0)
         }
         if (!(credit_identity_0.buffer instanceof ArrayBuffer && credit_identity_0.BYTES_PER_ELEMENT === 1 && credit_identity_0.length === 32)) {
           __compactRuntime.typeError('prove_loan_repayment',
                                      'argument 4 (argument 5 as invoked from Typescript)',
-                                     'nyxpay.compact line 384 char 1',
+                                     'nyxpay.compact line 390 char 1',
                                      'Bytes<32>',
                                      credit_identity_0)
         }
@@ -948,28 +954,28 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('prove_credit_standing',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 416 char 1',
+                                     'nyxpay.compact line 422 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(credit_identity_0.buffer instanceof ArrayBuffer && credit_identity_0.BYTES_PER_ELEMENT === 1 && credit_identity_0.length === 32)) {
           __compactRuntime.typeError('prove_credit_standing',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 416 char 1',
+                                     'nyxpay.compact line 422 char 1',
                                      'Bytes<32>',
                                      credit_identity_0)
         }
         if (!(on_time_threshold_0.buffer instanceof ArrayBuffer && on_time_threshold_0.BYTES_PER_ELEMENT === 1 && on_time_threshold_0.length === 32)) {
           __compactRuntime.typeError('prove_credit_standing',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nyxpay.compact line 416 char 1',
+                                     'nyxpay.compact line 422 char 1',
                                      'Bytes<32>',
                                      on_time_threshold_0)
         }
         if (!(max_defaults_allowed_0.buffer instanceof ArrayBuffer && max_defaults_allowed_0.BYTES_PER_ELEMENT === 1 && max_defaults_allowed_0.length === 32)) {
           __compactRuntime.typeError('prove_credit_standing',
                                      'argument 3 (argument 4 as invoked from Typescript)',
-                                     'nyxpay.compact line 416 char 1',
+                                     'nyxpay.compact line 422 char 1',
                                      'Bytes<32>',
                                      max_defaults_allowed_0)
         }
@@ -1001,21 +1007,21 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('prove_pool_solvency',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nyxpay.compact line 453 char 1',
+                                     'nyxpay.compact line 459 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(pool_commitment_0.buffer instanceof ArrayBuffer && pool_commitment_0.BYTES_PER_ELEMENT === 1 && pool_commitment_0.length === 32)) {
           __compactRuntime.typeError('prove_pool_solvency',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nyxpay.compact line 453 char 1',
+                                     'nyxpay.compact line 459 char 1',
                                      'Bytes<32>',
                                      pool_commitment_0)
         }
         if (!(coverage_ok_0.buffer instanceof ArrayBuffer && coverage_ok_0.BYTES_PER_ELEMENT === 1 && coverage_ok_0.length === 32)) {
           __compactRuntime.typeError('prove_pool_solvency',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nyxpay.compact line 453 char 1',
+                                     'nyxpay.compact line 459 char 1',
                                      'Bytes<32>',
                                      coverage_ok_0)
         }
@@ -1035,6 +1041,51 @@ export class Contract {
                                                      coverage_ok_0);
         partialProofData.output = { value: [], alignment: [] };
         return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
+      },
+      prove_strategy_commitment: (...args_1) => {
+        if (args_1.length !== 3) {
+          throw new __compactRuntime.CompactError(`prove_strategy_commitment: expected 3 arguments (as invoked from Typescript), received ${args_1.length}`);
+        }
+        const contextOrig_0 = args_1[0];
+        const strategy_commitment_0 = args_1[1];
+        const strategy_id_0 = args_1[2];
+        if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
+          __compactRuntime.typeError('prove_strategy_commitment',
+                                     'argument 1 (as invoked from Typescript)',
+                                     'nyxpay.compact line 478 char 1',
+                                     'CircuitContext',
+                                     contextOrig_0)
+        }
+        if (!(strategy_commitment_0.buffer instanceof ArrayBuffer && strategy_commitment_0.BYTES_PER_ELEMENT === 1 && strategy_commitment_0.length === 32)) {
+          __compactRuntime.typeError('prove_strategy_commitment',
+                                     'argument 1 (argument 2 as invoked from Typescript)',
+                                     'nyxpay.compact line 478 char 1',
+                                     'Bytes<32>',
+                                     strategy_commitment_0)
+        }
+        if (!(strategy_id_0.buffer instanceof ArrayBuffer && strategy_id_0.BYTES_PER_ELEMENT === 1 && strategy_id_0.length === 32)) {
+          __compactRuntime.typeError('prove_strategy_commitment',
+                                     'argument 2 (argument 3 as invoked from Typescript)',
+                                     'nyxpay.compact line 478 char 1',
+                                     'Bytes<32>',
+                                     strategy_id_0)
+        }
+        const context = { ...contextOrig_0, gasCost: __compactRuntime.emptyRunningCost() };
+        const partialProofData = {
+          input: {
+            value: _descriptor_1.toValue(strategy_commitment_0).concat(_descriptor_1.toValue(strategy_id_0)),
+            alignment: _descriptor_1.alignment().concat(_descriptor_1.alignment())
+          },
+          output: undefined,
+          publicTranscript: [],
+          privateTranscriptOutputs: []
+        };
+        const result_0 = this._prove_strategy_commitment_0(context,
+                                                           partialProofData,
+                                                           strategy_commitment_0,
+                                                           strategy_id_0);
+        partialProofData.output = { value: [], alignment: [] };
+        return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
       }
     };
     this.impureCircuits = {
@@ -1052,7 +1103,8 @@ export class Contract {
       prove_pool_deposit: this.circuits.prove_pool_deposit,
       prove_loan_repayment: this.circuits.prove_loan_repayment,
       prove_credit_standing: this.circuits.prove_credit_standing,
-      prove_pool_solvency: this.circuits.prove_pool_solvency
+      prove_pool_solvency: this.circuits.prove_pool_solvency,
+      prove_strategy_commitment: this.circuits.prove_strategy_commitment
     };
     this.provableCircuits = {
       publish_kyc_root: this.circuits.publish_kyc_root,
@@ -1069,7 +1121,8 @@ export class Contract {
       prove_pool_deposit: this.circuits.prove_pool_deposit,
       prove_loan_repayment: this.circuits.prove_loan_repayment,
       prove_credit_standing: this.circuits.prove_credit_standing,
-      prove_pool_solvency: this.circuits.prove_pool_solvency
+      prove_pool_solvency: this.circuits.prove_pool_solvency,
+      prove_strategy_commitment: this.circuits.prove_strategy_commitment
     };
   }
   initialState(...args_0) {
@@ -1105,6 +1158,7 @@ export class Contract {
     stateValue_0 = stateValue_0.arrayPush(__compactRuntime.StateValue.newNull());
     stateValue_0 = stateValue_0.arrayPush(__compactRuntime.StateValue.newNull());
     stateValue_0 = stateValue_0.arrayPush(__compactRuntime.StateValue.newNull());
+    stateValue_0 = stateValue_0.arrayPush(__compactRuntime.StateValue.newNull());
     state_0.data = new __compactRuntime.ChargedState(stateValue_0);
     state_0.setOperation('publish_kyc_root', new __compactRuntime.ContractOperation());
     state_0.setOperation('publish_settlement_anchor', new __compactRuntime.ContractOperation());
@@ -1121,6 +1175,7 @@ export class Contract {
     state_0.setOperation('prove_loan_repayment', new __compactRuntime.ContractOperation());
     state_0.setOperation('prove_credit_standing', new __compactRuntime.ContractOperation());
     state_0.setOperation('prove_pool_solvency', new __compactRuntime.ContractOperation());
+    state_0.setOperation('prove_strategy_commitment', new __compactRuntime.ContractOperation());
     const context = __compactRuntime.createCircuitContext(__compactRuntime.dummyContractAddress(), constructorContext_0.initialZswapLocalState.coinPublicKey, state_0.data, constructorContext_0.initialPrivateState);
     const partialProofData = {
       input: { value: [], alignment: [] },
@@ -1286,6 +1341,16 @@ export class Contract {
                                       [
                                        { push: { storage: false,
                                                  value: __compactRuntime.StateValue.newCell({ value: _descriptor_19.toValue(13n),
+                                                                                              alignment: _descriptor_19.alignment() }).encode() } },
+                                       { push: { storage: true,
+                                                 value: __compactRuntime.StateValue.newCell({ value: _descriptor_15.toValue(0n),
+                                                                                              alignment: _descriptor_15.alignment() }).encode() } },
+                                       { ins: { cached: false, n: 1 } }]);
+    __compactRuntime.queryLedgerState(context,
+                                      partialProofData,
+                                      [
+                                       { push: { storage: false,
+                                                 value: __compactRuntime.StateValue.newCell({ value: _descriptor_19.toValue(14n),
                                                                                               alignment: _descriptor_19.alignment() }).encode() } },
                                        { push: { storage: true,
                                                  value: __compactRuntime.StateValue.newCell({ value: _descriptor_15.toValue(0n),
@@ -1543,7 +1608,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0 && result_0 <= __compactRuntime.MAX_FIELD)) {
       __compactRuntime.typeError('lockOldBalance',
                                  'return value',
-                                 'nyxpay.compact line 46 char 1',
+                                 'nyxpay.compact line 48 char 1',
                                  'Field',
                                  result_0)
     }
@@ -1560,7 +1625,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0 && result_0 <= __compactRuntime.MAX_FIELD)) {
       __compactRuntime.typeError('lockCollateralAmount',
                                  'return value',
-                                 'nyxpay.compact line 47 char 1',
+                                 'nyxpay.compact line 49 char 1',
                                  'Field',
                                  result_0)
     }
@@ -1577,7 +1642,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0 && result_0 <= __compactRuntime.MAX_FIELD)) {
       __compactRuntime.typeError('lockLoanAmount',
                                  'return value',
-                                 'nyxpay.compact line 48 char 1',
+                                 'nyxpay.compact line 50 char 1',
                                  'Field',
                                  result_0)
     }
@@ -1594,7 +1659,7 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('lockOldOpening',
                                  'return value',
-                                 'nyxpay.compact line 49 char 1',
+                                 'nyxpay.compact line 51 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -1611,7 +1676,7 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('lockNewOpening',
                                  'return value',
-                                 'nyxpay.compact line 50 char 1',
+                                 'nyxpay.compact line 52 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -1628,7 +1693,7 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('lockCollateralOpening',
                                  'return value',
-                                 'nyxpay.compact line 51 char 1',
+                                 'nyxpay.compact line 53 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -1645,7 +1710,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0 && result_0 <= __compactRuntime.MAX_FIELD)) {
       __compactRuntime.typeError('poolOldTotal',
                                  'return value',
-                                 'nyxpay.compact line 53 char 1',
+                                 'nyxpay.compact line 55 char 1',
                                  'Field',
                                  result_0)
     }
@@ -1662,7 +1727,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0 && result_0 <= __compactRuntime.MAX_FIELD)) {
       __compactRuntime.typeError('poolDepositAmount',
                                  'return value',
-                                 'nyxpay.compact line 54 char 1',
+                                 'nyxpay.compact line 56 char 1',
                                  'Field',
                                  result_0)
     }
@@ -1679,7 +1744,7 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('poolOldOpening',
                                  'return value',
-                                 'nyxpay.compact line 55 char 1',
+                                 'nyxpay.compact line 57 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -1696,7 +1761,7 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('poolNewOpening',
                                  'return value',
-                                 'nyxpay.compact line 56 char 1',
+                                 'nyxpay.compact line 58 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -1713,7 +1778,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0 && result_0 <= __compactRuntime.MAX_FIELD)) {
       __compactRuntime.typeError('poolLenderOldBalance',
                                  'return value',
-                                 'nyxpay.compact line 57 char 1',
+                                 'nyxpay.compact line 59 char 1',
                                  'Field',
                                  result_0)
     }
@@ -1730,7 +1795,7 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('poolLenderNewOpening',
                                  'return value',
-                                 'nyxpay.compact line 58 char 1',
+                                 'nyxpay.compact line 60 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -1747,7 +1812,7 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('poolLenderOldOpening',
                                  'return value',
-                                 'nyxpay.compact line 59 char 1',
+                                 'nyxpay.compact line 61 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -1764,7 +1829,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0 && result_0 <= __compactRuntime.MAX_FIELD)) {
       __compactRuntime.typeError('repayInstallmentAmount',
                                  'return value',
-                                 'nyxpay.compact line 61 char 1',
+                                 'nyxpay.compact line 63 char 1',
                                  'Field',
                                  result_0)
     }
@@ -1781,7 +1846,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0 && result_0 <= __compactRuntime.MAX_FIELD)) {
       __compactRuntime.typeError('repayRemainingOld',
                                  'return value',
-                                 'nyxpay.compact line 62 char 1',
+                                 'nyxpay.compact line 64 char 1',
                                  'Field',
                                  result_0)
     }
@@ -1798,7 +1863,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0 && result_0 <= __compactRuntime.MAX_FIELD)) {
       __compactRuntime.typeError('repayRemainingNew',
                                  'return value',
-                                 'nyxpay.compact line 63 char 1',
+                                 'nyxpay.compact line 65 char 1',
                                  'Field',
                                  result_0)
     }
@@ -1815,7 +1880,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0 && result_0 <= __compactRuntime.MAX_FIELD)) {
       __compactRuntime.typeError('standingOnTimeCount',
                                  'return value',
-                                 'nyxpay.compact line 65 char 1',
+                                 'nyxpay.compact line 67 char 1',
                                  'Field',
                                  result_0)
     }
@@ -1832,7 +1897,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0 && result_0 <= __compactRuntime.MAX_FIELD)) {
       __compactRuntime.typeError('standingDefaultCount',
                                  'return value',
-                                 'nyxpay.compact line 66 char 1',
+                                 'nyxpay.compact line 68 char 1',
                                  'Field',
                                  result_0)
     }
@@ -1849,7 +1914,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0 && result_0 <= __compactRuntime.MAX_FIELD)) {
       __compactRuntime.typeError('standingOnTimeThreshold',
                                  'return value',
-                                 'nyxpay.compact line 67 char 1',
+                                 'nyxpay.compact line 69 char 1',
                                  'Field',
                                  result_0)
     }
@@ -1866,7 +1931,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0 && result_0 <= __compactRuntime.MAX_FIELD)) {
       __compactRuntime.typeError('standingMaxDefaults',
                                  'return value',
-                                 'nyxpay.compact line 68 char 1',
+                                 'nyxpay.compact line 70 char 1',
                                  'Field',
                                  result_0)
     }
@@ -1883,7 +1948,7 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('standingThrOpening',
                                  'return value',
-                                 'nyxpay.compact line 69 char 1',
+                                 'nyxpay.compact line 71 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -1900,7 +1965,41 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('standingMaxDefOpening',
                                  'return value',
-                                 'nyxpay.compact line 70 char 1',
+                                 'nyxpay.compact line 72 char 1',
+                                 'Bytes<32>',
+                                 result_0)
+    }
+    partialProofData.privateTranscriptOutputs.push({
+      value: _descriptor_1.toValue(result_0),
+      alignment: _descriptor_1.alignment()
+    });
+    return result_0;
+  }
+  _strategyWeight_0(context, partialProofData) {
+    const witnessContext_0 = __compactRuntime.createWitnessContext(ledger(context.currentQueryContext.state), context.currentPrivateState, context.currentQueryContext.address);
+    const [nextPrivateState_0, result_0] = this.witnesses.strategyWeight(witnessContext_0);
+    context.currentPrivateState = nextPrivateState_0;
+    if (!(typeof(result_0) === 'bigint' && result_0 >= 0 && result_0 <= __compactRuntime.MAX_FIELD)) {
+      __compactRuntime.typeError('strategyWeight',
+                                 'return value',
+                                 'nyxpay.compact line 75 char 1',
+                                 'Field',
+                                 result_0)
+    }
+    partialProofData.privateTranscriptOutputs.push({
+      value: _descriptor_2.toValue(result_0),
+      alignment: _descriptor_2.alignment()
+    });
+    return result_0;
+  }
+  _strategyOpening_0(context, partialProofData) {
+    const witnessContext_0 = __compactRuntime.createWitnessContext(ledger(context.currentQueryContext.state), context.currentPrivateState, context.currentQueryContext.address);
+    const [nextPrivateState_0, result_0] = this.witnesses.strategyOpening(witnessContext_0);
+    context.currentPrivateState = nextPrivateState_0;
+    if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
+      __compactRuntime.typeError('strategyOpening',
+                                 'return value',
+                                 'nyxpay.compact line 76 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -2097,7 +2196,7 @@ export class Contract {
     let t_0;
     __compactRuntime.assert((t_0 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 140 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 146 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(amount_0),
@@ -2140,7 +2239,7 @@ export class Contract {
     let t_0;
     __compactRuntime.assert((t_0 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 163 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 169 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(amount_0),
@@ -2149,7 +2248,7 @@ export class Contract {
     let t_1;
     __compactRuntime.assert((t_1 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 164 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 170 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(old_bal_0),
@@ -2157,7 +2256,7 @@ export class Contract {
                              >=
                              ((t1) => {
                                if (t1 > 18446744073709551615n) {
-                                 throw new __compactRuntime.CompactError('nyxpay.compact line 164 char 33: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                 throw new __compactRuntime.CompactError('nyxpay.compact line 170 char 33: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                }
                                return t1;
                              })(amount_0)),
@@ -2231,7 +2330,7 @@ export class Contract {
     let t_0;
     __compactRuntime.assert((t_0 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 201 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 207 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(amount_0),
@@ -2245,7 +2344,7 @@ export class Contract {
     let t_1;
     __compactRuntime.assert((t_1 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 207 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 213 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(new_bal_0),
@@ -2253,7 +2352,7 @@ export class Contract {
                              >=
                              ((t1) => {
                                if (t1 > 18446744073709551615n) {
-                                 throw new __compactRuntime.CompactError('nyxpay.compact line 207 char 33: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                 throw new __compactRuntime.CompactError('nyxpay.compact line 213 char 33: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                }
                                return t1;
                              })(old_bal_0)),
@@ -2427,7 +2526,7 @@ export class Contract {
     let t_0;
     __compactRuntime.assert((t_0 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 300 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 306 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(loan_0),
@@ -2436,7 +2535,7 @@ export class Contract {
     let t_1;
     __compactRuntime.assert((t_1 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 301 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 307 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(collateral_0),
@@ -2445,14 +2544,14 @@ export class Contract {
     let t_2;
     __compactRuntime.assert((t_2 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 304 char 6: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 310 char 6: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(collateral_0)
                                    +
                                    ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 304 char 33: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 310 char 33: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(collateral_0),
@@ -2460,21 +2559,21 @@ export class Contract {
                              >=
                              ((t1) => {
                                if (t1 > 18446744073709551615n) {
-                                 throw new __compactRuntime.CompactError('nyxpay.compact line 305 char 11: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                 throw new __compactRuntime.CompactError('nyxpay.compact line 311 char 11: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                }
                                return t1;
                              })(loan_0)
                              +
                              ((t1) => {
                                if (t1 > 18446744073709551615n) {
-                                 throw new __compactRuntime.CompactError('nyxpay.compact line 305 char 32: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                 throw new __compactRuntime.CompactError('nyxpay.compact line 311 char 32: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                }
                                return t1;
                              })(loan_0)
                              +
                              ((t1) => {
                                if (t1 > 18446744073709551615n) {
-                                 throw new __compactRuntime.CompactError('nyxpay.compact line 305 char 53: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                 throw new __compactRuntime.CompactError('nyxpay.compact line 311 char 53: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                }
                                return t1;
                              })(loan_0)),
@@ -2482,7 +2581,7 @@ export class Contract {
     let t_3;
     __compactRuntime.assert((t_3 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 308 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 314 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(old_bal_0),
@@ -2490,7 +2589,7 @@ export class Contract {
                              >=
                              ((t1) => {
                                if (t1 > 18446744073709551615n) {
-                                 throw new __compactRuntime.CompactError('nyxpay.compact line 308 char 33: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                 throw new __compactRuntime.CompactError('nyxpay.compact line 314 char 33: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                }
                                return t1;
                              })(collateral_0)),
@@ -2571,7 +2670,7 @@ export class Contract {
     let t_0;
     __compactRuntime.assert((t_0 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 351 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 357 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(deposit_0),
@@ -2580,7 +2679,7 @@ export class Contract {
     let t_1;
     __compactRuntime.assert((t_1 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 352 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 358 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(lender_old_0),
@@ -2588,7 +2687,7 @@ export class Contract {
                              >=
                              ((t1) => {
                                if (t1 > 18446744073709551615n) {
-                                 throw new __compactRuntime.CompactError('nyxpay.compact line 352 char 36: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                 throw new __compactRuntime.CompactError('nyxpay.compact line 358 char 36: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                }
                                return t1;
                              })(deposit_0)),
@@ -2665,7 +2764,7 @@ export class Contract {
     let t_0;
     __compactRuntime.assert((t_0 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 394 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 400 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(installment_0),
@@ -2674,7 +2773,7 @@ export class Contract {
     let t_1;
     __compactRuntime.assert((t_1 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 395 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 401 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(remaining_old_0),
@@ -2682,7 +2781,7 @@ export class Contract {
                              >=
                              ((t1) => {
                                if (t1 > 18446744073709551615n) {
-                                 throw new __compactRuntime.CompactError('nyxpay.compact line 395 char 39: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                 throw new __compactRuntime.CompactError('nyxpay.compact line 401 char 39: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                }
                                return t1;
                              })(installment_0)),
@@ -2747,7 +2846,7 @@ export class Contract {
     let t_0;
     __compactRuntime.assert((t_0 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 429 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 435 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(on_time_0),
@@ -2755,7 +2854,7 @@ export class Contract {
                              >=
                              ((t1) => {
                                if (t1 > 18446744073709551615n) {
-                                 throw new __compactRuntime.CompactError('nyxpay.compact line 429 char 33: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                 throw new __compactRuntime.CompactError('nyxpay.compact line 435 char 33: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                }
                                return t1;
                              })(thr_0)),
@@ -2763,7 +2862,7 @@ export class Contract {
     let t_1;
     __compactRuntime.assert((t_1 = ((t1) => {
                                      if (t1 > 18446744073709551615n) {
-                                       throw new __compactRuntime.CompactError('nyxpay.compact line 430 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                       throw new __compactRuntime.CompactError('nyxpay.compact line 436 char 10: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                      }
                                      return t1;
                                    })(defaults_0),
@@ -2771,7 +2870,7 @@ export class Contract {
                              <=
                              ((t1) => {
                                if (t1 > 18446744073709551615n) {
-                                 throw new __compactRuntime.CompactError('nyxpay.compact line 430 char 34: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                                 throw new __compactRuntime.CompactError('nyxpay.compact line 436 char 34: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                                }
                                return t1;
                              })(max_def_0)),
@@ -2835,6 +2934,46 @@ export class Contract {
                                                 path: [
                                                        { tag: 'value',
                                                          value: { value: _descriptor_19.toValue(13n),
+                                                                  alignment: _descriptor_19.alignment() } }] } },
+                                       { addi: { immediate: parseInt(__compactRuntime.valueToBigInt(
+                                                              { value: _descriptor_0.toValue(tmp_0),
+                                                                alignment: _descriptor_0.alignment() }
+                                                                .value
+                                                            )) } },
+                                       { ins: { cached: true, n: 1 } }]);
+    return [];
+  }
+  _prove_strategy_commitment_0(context,
+                               partialProofData,
+                               strategy_commitment_0,
+                               strategy_id_0)
+  {
+    __compactRuntime.assert(!this._equal_55(strategy_commitment_0,
+                                            new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])),
+                            'empty strategy commitment');
+    __compactRuntime.assert(!this._equal_56(strategy_id_0,
+                                            new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])),
+                            'empty strategy id');
+    const w_0 = this._strategyWeight_0(context, partialProofData);
+    const open_0 = this._strategyOpening_0(context, partialProofData);
+    __compactRuntime.assert(this._equal_57(this._persistentCommit_0(w_0, open_0),
+                                           strategy_commitment_0),
+                            'strategy commitment bind failed');
+    const bind_0 = this._persistentHash_4([new Uint8Array([99, 105, 114, 99, 108, 101, 100, 58, 115, 116, 114, 97, 116, 101, 103, 121, 58, 99, 111, 109, 109, 105, 116, 58, 0, 0, 0, 0, 0, 0, 0, 0]),
+                                           strategy_id_0,
+                                           strategy_commitment_0]);
+    __compactRuntime.assert(!this._equal_58(bind_0,
+                                            new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])),
+                            'strategy bind failed');
+    const tmp_0 = 1n;
+    __compactRuntime.queryLedgerState(context,
+                                      partialProofData,
+                                      [
+                                       { idx: { cached: false,
+                                                pushPath: true,
+                                                path: [
+                                                       { tag: 'value',
+                                                         value: { value: _descriptor_19.toValue(14n),
                                                                   alignment: _descriptor_19.alignment() } }] } },
                                        { addi: { immediate: parseInt(__compactRuntime.valueToBigInt(
                                                               { value: _descriptor_0.toValue(tmp_0),
@@ -3065,6 +3204,22 @@ export class Contract {
     return true;
   }
   _equal_54(x0, y0) {
+    if (!x0.every((x, i) => y0[i] === x)) { return false; }
+    return true;
+  }
+  _equal_55(x0, y0) {
+    if (!x0.every((x, i) => y0[i] === x)) { return false; }
+    return true;
+  }
+  _equal_56(x0, y0) {
+    if (!x0.every((x, i) => y0[i] === x)) { return false; }
+    return true;
+  }
+  _equal_57(x0, y0) {
+    if (!x0.every((x, i) => y0[i] === x)) { return false; }
+    return true;
+  }
+  _equal_58(x0, y0) {
     if (!x0.every((x, i) => y0[i] === x)) { return false; }
     return true;
   }
@@ -3388,6 +3543,20 @@ export function ledger(stateOrChargedState) {
                                                                                                     alignment: _descriptor_19.alignment() } }] } },
                                                                          { popeq: { cached: true,
                                                                                     result: undefined } }]).value);
+    },
+    get strategy_commit_count() {
+      return _descriptor_15.fromValue(__compactRuntime.queryLedgerState(context,
+                                                                        partialProofData,
+                                                                        [
+                                                                         { dup: { n: 0 } },
+                                                                         { idx: { cached: false,
+                                                                                  pushPath: false,
+                                                                                  path: [
+                                                                                         { tag: 'value',
+                                                                                           value: { value: _descriptor_19.toValue(14n),
+                                                                                                    alignment: _descriptor_19.alignment() } }] } },
+                                                                         { popeq: { cached: true,
+                                                                                    result: undefined } }]).value);
     }
   };
 }
@@ -3427,7 +3596,9 @@ const _dummyContract = new Contract({
   standingOnTimeThreshold: (...args) => undefined,
   standingMaxDefaults: (...args) => undefined,
   standingThrOpening: (...args) => undefined,
-  standingMaxDefOpening: (...args) => undefined
+  standingMaxDefOpening: (...args) => undefined,
+  strategyWeight: (...args) => undefined,
+  strategyOpening: (...args) => undefined
 });
 export const pureCircuits = {
   publicKey: (...args_0) => {
@@ -3439,14 +3610,14 @@ export const pureCircuits = {
     if (!(sk_0.buffer instanceof ArrayBuffer && sk_0.BYTES_PER_ELEMENT === 1 && sk_0.length === 32)) {
       __compactRuntime.typeError('publicKey',
                                  'argument 1',
-                                 'nyxpay.compact line 248 char 1',
+                                 'nyxpay.compact line 254 char 1',
                                  'Bytes<32>',
                                  sk_0)
     }
     if (!(domain_0.buffer instanceof ArrayBuffer && domain_0.BYTES_PER_ELEMENT === 1 && domain_0.length === 32)) {
       __compactRuntime.typeError('publicKey',
                                  'argument 2',
-                                 'nyxpay.compact line 248 char 1',
+                                 'nyxpay.compact line 254 char 1',
                                  'Bytes<32>',
                                  domain_0)
     }

@@ -1,17 +1,21 @@
 import { useMemo, useState } from "react";
 import type { DeviceVaultState } from "../lib/deviceVault";
+import { formatMoney, getDisplayCurrency } from "../lib/currency";
+import { fundWallet } from "../lib/fund";
 import { CurrencyPicker } from "../components/CurrencyPicker";
 import { SpendingInsights } from "./SpendingInsights";
 
 type Props = {
-  onOpenCircled: () => void;
+  onOpenCircle: () => void;
   onOpenContacts?: () => void;
+  onOpenSettings?: () => void;
   onPay: () => void;
   proving?: boolean;
   listening?: boolean;
   voiceHint?: string;
   vault?: DeviceVaultState | null;
   onVaultChange?: (v: DeviceVaultState) => void;
+  backendOk?: boolean | null;
 };
 
 const APPS: { name: string; hue: string }[] = [
@@ -26,32 +30,76 @@ const APPS: { name: string; hue: string }[] = [
 ];
 
 export function HomeScreen({
-  onOpenCircled,
+  onOpenCircle,
   onOpenContacts,
+  onOpenSettings,
   onPay,
   proving,
   listening,
-  voiceHint = "Tap card · say amount and name",
+  voiceHint = "Tap to speak — amount and name",
   vault = null,
   onVaultChange,
+  backendOk = true,
 }: Props) {
   const [insightsOn, setInsightsOn] = useState(false);
+  const [fundOpen, setFundOpen] = useState(false);
+  const [fundBusy, setFundBusy] = useState(false);
+  const [fundErr, setFundErr] = useState("");
+  const currency = getDisplayCurrency();
   const clock = useMemo(() => {
     const d = new Date();
     return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }, []);
 
+  const recent = useMemo(() => {
+    const list = [...(vault?.paymentHistory ?? [])];
+    list.sort((a, b) => b.timestamp - a.timestamp);
+    return list.slice(0, 3);
+  }, [vault?.paymentHistory]);
+
+  const balanceLabel = vault ? formatMoney(vault.balance, currency) : "—";
+  const statusLine = listening
+    ? "I’m listening…"
+    : proving
+      ? "Working on it…"
+      : backendOk === false
+        ? "Offline — balance on device"
+        : voiceHint;
+
+  async function addMoney(amount: number) {
+    if (!vault || !onVaultChange) return;
+    setFundBusy(true);
+    setFundErr("");
+    try {
+      const next = await fundWallet(vault, amount);
+      onVaultChange(next);
+      setFundOpen(false);
+    } catch (e) {
+      setFundErr(e instanceof Error ? e.message : "Could not add money");
+    } finally {
+      setFundBusy(false);
+    }
+  }
+
   return (
     <div className="home">
       <div className="home__status">
         <span>{clock}</span>
-        <span className="home__status-right">5G · ▮▮▮</span>
+        <span className="home__status-right">
+          {onOpenSettings ? (
+            <button type="button" className="home__settings-link" onClick={onOpenSettings}>
+              Settings
+            </button>
+          ) : (
+            "5G · ▮▮▮"
+          )}
+        </span>
       </div>
 
       <div className="home__wallpaper" aria-hidden />
 
       <div
-        className={`circled-widget ${proving || listening ? "circled-widget--live" : ""} ${
+        className={`circled-widget circled-widget--money ${proving || listening ? "circled-widget--live" : ""} ${
           insightsOn ? "circled-widget--insights" : ""
         }`}
       >
@@ -62,17 +110,33 @@ export function HomeScreen({
           type="button"
           className="circled-widget__pay"
           onClick={onPay}
-          onDoubleClick={onOpenCircled}
-          aria-label="Circled — tap to speak a payment"
+          onDoubleClick={onOpenCircle}
+          aria-label="Circle — tap to speak a payment"
         >
           <span className="circled-widget__glyph-wrap">
             <img src="/glyph.png" alt="" className="circled-widget__glyph" />
           </span>
           <span className="circled-widget__meta">
-            <strong className="brand-mark">Circled</strong>
-            <em aria-live="polite">
-              {listening ? "Listening…" : proving ? "Verifying…" : "Tap to speak"}
-            </em>
+            <strong className="brand-mark">Circle</strong>
+            <span className="circled-widget__balance">{balanceLabel}</span>
+            <em aria-live="polite">{statusLine}</em>
+            <span className="circled-widget__activity" aria-label="Recent payments">
+              {recent.length === 0 ? (
+                <span className="circled-widget__activity-empty">
+                  {vault && vault.balance <= 0 ? "Add money to start paying" : "No payments yet"}
+                </span>
+              ) : (
+                recent.map((p) => (
+                  <span key={p.id} className="circled-widget__activity-row">
+                    <span className="circled-widget__activity-name">{p.recipient}</span>
+                    <span className="circled-widget__activity-amt">
+                      {p.direction === "out" ? "−" : "+"}
+                      {formatMoney(p.amount, currency)}
+                    </span>
+                  </span>
+                ))
+              )}
+            </span>
           </span>
         </button>
 
@@ -110,8 +174,8 @@ export function HomeScreen({
         <button
           type="button"
           className="circled-dock"
-          onClick={onOpenCircled}
-          aria-label="Open Circled type-to-pay"
+          onClick={onOpenCircle}
+          aria-label="Open Circle type-to-pay"
           title="Type a payment"
         >
           <span className="circled-dock__flow" aria-hidden />
@@ -123,13 +187,65 @@ export function HomeScreen({
         <CurrencyPicker compact />
       </div>
 
-      {onOpenContacts && (
-        <button type="button" className="home__contacts-btn" onClick={onOpenContacts}>
-          Contacts · {vault?.contacts?.length ?? 0} on device
-        </button>
-      )}
+      <div className="home__actions-row">
+        {vault && onVaultChange && (
+          <button
+            type="button"
+            className="home__fund-btn"
+            disabled={backendOk === false}
+            onClick={() => {
+              setFundErr("");
+              setFundOpen(true);
+            }}
+          >
+            Add money
+          </button>
+        )}
+        {onOpenContacts && (
+          <button type="button" className="home__contacts-btn" onClick={onOpenContacts}>
+            Contacts · {vault?.contacts?.length ?? 0}
+          </button>
+        )}
+      </div>
 
-      <p className="home__hint">{listening ? "Say amount and name" : voiceHint}</p>
+      <p className="home__hint">
+        {listening
+          ? "Say amount and name"
+          : backendOk === false
+            ? "Backend offline — you can view balance; pay when systems are live"
+            : "Pay from the widget — no app open needed"}
+      </p>
+
+      {fundOpen && (
+        <div className="home-fund" role="dialog" aria-label="Add money">
+          <div className="home-fund__card">
+            <h3>Add money</h3>
+            <p>Top up your on-device Circle balance (testnet product rail).</p>
+            <div className="home-fund__presets">
+              {[1_000, 5_000, 10_000, 25_000].map((amt) => (
+                <button
+                  key={amt}
+                  type="button"
+                  className="btn ghost"
+                  disabled={fundBusy}
+                  onClick={() => void addMoney(amt)}
+                >
+                  {formatMoney(amt, currency)}
+                </button>
+              ))}
+            </div>
+            {fundErr && <p className="error">{fundErr}</p>}
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={fundBusy}
+              onClick={() => setFundOpen(false)}
+            >
+              {fundBusy ? "Adding…" : "Cancel"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {insightsOn && vault && onVaultChange && (
         <SpendingInsights

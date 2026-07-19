@@ -12,7 +12,7 @@ export function Glyph({
   pulse = false,
   dim = false,
   className = "",
-  alt = "Circled glyph",
+  alt = "Circle glyph",
 }: GlyphProps) {
   return (
     <img

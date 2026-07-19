@@ -1,8 +1,8 @@
 /**
  * verified-merchant-payment — agent-facing wrapper around a26z-Brand-style
  * brand registry membership + payment-address binding + challenge freshness
- * + nullifier revocation. Maps onto Circled crypto (Merkle + HMAC binding +
- * challenge burn), same patterns as prove_recipient_valid / CircledProof.
+ * + nullifier revocation. Maps onto Circle crypto (Merkle + HMAC binding +
+ * challenge burn), same patterns as prove_recipient_valid / CircleProof.
  */
 import { hmacSign, hmacVerify, merkleRoot, randomNonce, sha256 } from "./crypto.js";
 import { allowMerchantAutoProve } from "./merchantHsm.js";

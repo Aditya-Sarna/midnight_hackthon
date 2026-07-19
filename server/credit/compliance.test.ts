@@ -28,7 +28,7 @@ function freshStore(): Store {
   };
 }
 
-describe("Circled Credit compliance", () => {
+describe("Circle Credit compliance", () => {
   const prev = { ...process.env };
 
   beforeEach(() => {

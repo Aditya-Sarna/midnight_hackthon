@@ -127,8 +127,8 @@ export function MerchantReceive({ onBack, onSystemsEvent }: Props) {
         <p className="atelier-kicker">Merchant mode</p>
         <h1 className="brand-mark">Receive</h1>
         <p className="merchant__lede">
-          Private inbound payments — JIT destination, order reconcile, encrypted credit. No device vault
-          required for the merchant counterparty.
+          Private inbound in CIRCLE product units — JIT destination, order reconcile, encrypted credit.
+          Payer settles with Compact <code>prove_credit_update</code>. Off-ramp below is a mock bank stub.
         </p>
       </header>
 

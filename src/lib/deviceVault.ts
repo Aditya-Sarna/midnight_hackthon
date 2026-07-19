@@ -5,7 +5,7 @@
 import {
   aesDecrypt,
   commit,
-  generateKeypair,
+  generateKeypairWithRecovery,
   randomNonce,
   type DeviceKeypair,
 } from "./crypto";
@@ -98,6 +98,10 @@ export type PaymentRecord = {
   category: string;
   timestamp: number;
   direction: "out" | "in";
+  /** Optional link for refunds / disputes */
+  status?: "settled" | "disputed" | "refunded";
+  disputeId?: string;
+  parentPaymentId?: string;
 };
 
 export type DeviceVaultState = {
@@ -117,7 +121,7 @@ export type DeviceVaultState = {
   viewKey?: string;
   /** Past payments — device-only cycle history */
   paymentHistory?: PaymentRecord[];
-  /** Circled Credit — locked collateral by loan id (Class 0 only) */
+  /** Circle Credit — locked collateral by loan id (Class 0 only) */
   lockedCollateral?: Record<string, number>;
   /** Demo-only peer vaults kept on-device for same-browser demos — never sent to server */
   demoPeerVaults?: Record<string, DeviceVaultState>;
@@ -223,8 +227,27 @@ export async function createFreshVault(input: {
   initialBalance?: number;
   policy?: PolicyState;
 }): Promise<DeviceVaultState> {
-  const keypair = await generateKeypair(input.userId);
-  /** Demo / judge wallets start funded — never trip insufficient-balance on first pays */
+  const { vault } = await createFreshVaultWithRecovery(input);
+  return vault;
+}
+
+/** Product path — returns one-shot JWKs for passphrase recovery kit */
+export async function createFreshVaultWithRecovery(input: {
+  userId: string;
+  displayName: string;
+  credentialCommitment: string;
+  kycNullifier: string;
+  initialBalance?: number;
+  policy?: PolicyState;
+}): Promise<{
+  vault: DeviceVaultState;
+  recoveryJwks?: {
+    privateKeyJwk: JsonWebKey;
+    encPrivateKeyJwk: JsonWebKey;
+  };
+}> {
+  const generated = await generateKeypairWithRecovery(input.userId);
+  /** Demo / judge wallets start funded — product path passes 0 explicitly */
   const balance = input.initialBalance ?? 100_000;
   const balanceNonce = randomNonce();
   const balanceOpening = randomOpeningHex();
@@ -248,7 +271,7 @@ export async function createFreshVault(input: {
     version: 3,
     userId: input.userId,
     displayName: input.displayName,
-    keypair,
+    keypair: generated.keypair,
     balance,
     balanceNonce,
     balanceOpening,
@@ -259,7 +282,7 @@ export async function createFreshVault(input: {
     kycNullifier: input.kycNullifier,
   };
   await saveVault(state, { activate: false });
-  return state;
+  return { vault: state, recoveryJwks: generated.recoveryJwks };
 }
 
 export async function applySpend(
@@ -348,15 +371,110 @@ export async function applyCredit(
     balanceOpening: string;
     balanceCommitment: string;
     balanceNonce?: string;
-  }
+  },
+  meta?: { recipient: string; category: string }
 ): Promise<DeviceVaultState> {
   const balance = vault.balance + amount;
   const balanceNonce = openings?.balanceNonce ?? randomNonce();
   const balanceOpening = openings?.balanceOpening ?? randomOpeningHex();
   const balanceCommitment =
     openings?.balanceCommitment ?? (await compactBalanceCommit(balance, balanceOpening));
-  const next = { ...vault, balance, balanceNonce, balanceOpening, balanceCommitment };
+  const history = [...(vault.paymentHistory ?? [])];
+  if (meta) {
+    history.unshift({
+      id: randomNonce(8),
+      amount,
+      recipient: meta.recipient,
+      category: meta.category || "general",
+      timestamp: Date.now(),
+      direction: "in",
+    });
+  }
+  const next = {
+    ...vault,
+    balance,
+    balanceNonce,
+    balanceOpening,
+    balanceCommitment,
+    paymentHistory: history.slice(0, 80),
+  };
   await saveVault(next, { activate: false });
+  return next;
+}
+
+async function fetchServerBalanceCommitment(userId: string): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(userId)}`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { user?: { balanceCommitment?: string } };
+    const c = String(data.user?.balanceCommitment ?? "");
+    return c || null;
+  } catch {
+    return null;
+  }
+}
+
+async function resealBalanceCommitment(
+  userId: string,
+  oldBalanceCommitment: string,
+  newBalanceCommitment: string
+): Promise<void> {
+  if (oldBalanceCommitment === newBalanceCommitment) return;
+  const res = await fetch(`/api/users/${encodeURIComponent(userId)}/reseal-balance`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ oldBalanceCommitment, newBalanceCommitment }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) {
+    throw new Error(
+      data.reason || data.error || "Could not reseal balance commitment"
+    );
+  }
+}
+
+/**
+ * Align Class 0 vault with the server's public balanceCommitment.
+ * Device balance is the product-rail source of truth; server commitment is updated to match.
+ * Always prefer the server value as `oldBalanceCommitment` so drift cannot block Add money.
+ */
+export async function alignBalanceCommitmentWithServer(
+  vault: DeviceVaultState
+): Promise<DeviceVaultState> {
+  const serverCommitment = await fetchServerBalanceCommitment(vault.userId);
+  if (!serverCommitment) {
+    throw new Error("Could not reach account — check the API is running");
+  }
+
+  const opening = vault.balanceOpening?.trim() ?? "";
+  if (/^[0-9a-fA-F]{64}$/.test(opening)) {
+    const expected = await compactBalanceCommit(vault.balance, opening);
+    if (expected === serverCommitment) {
+      if (vault.balanceCommitment === serverCommitment) return vault;
+      const fixed = { ...vault, balanceCommitment: serverCommitment };
+      await saveVault(fixed);
+      return fixed;
+    }
+    // Opening opens a commitment that isn't on the server yet — push it
+    if (expected === vault.balanceCommitment || vault.balanceCommitment !== serverCommitment) {
+      await resealBalanceCommitment(vault.userId, serverCommitment, expected);
+      const next = { ...vault, balanceCommitment: expected };
+      await saveVault(next);
+      return next;
+    }
+  }
+
+  // Remint opening for current device balance and reseal from server tip
+  const newOpening = randomOpeningHex();
+  const newCommitment = await compactBalanceCommit(vault.balance, newOpening);
+  await resealBalanceCommitment(vault.userId, serverCommitment, newCommitment);
+  const next: DeviceVaultState = {
+    ...vault,
+    balanceOpening: newOpening,
+    balanceCommitment: newCommitment,
+    balanceNonce: vault.balanceNonce || randomNonce(),
+  };
+  await saveVault(next);
   return next;
 }
 
@@ -367,35 +485,15 @@ export async function applyCredit(
 export async function ensureCompactBalanceWitness(
   vault: DeviceVaultState
 ): Promise<DeviceVaultState> {
-  const opening = vault.balanceOpening?.trim() ?? "";
-  if (/^[0-9a-fA-F]{64}$/.test(opening)) {
-    const expected = await compactBalanceCommit(vault.balance, opening);
-    if (expected === vault.balanceCommitment) return vault;
+  try {
+    return await alignBalanceCommitmentWithServer(vault);
+  } catch {
+    // Offline fallback: keep local consistency only
+    const opening = vault.balanceOpening?.trim() ?? "";
+    if (/^[0-9a-fA-F]{64}$/.test(opening)) {
+      const expected = await compactBalanceCommit(vault.balance, opening);
+      if (expected === vault.balanceCommitment) return vault;
+    }
+    throw new Error("Could not reseal balance opening for Compact credit");
   }
-
-  const newOpening = randomOpeningHex();
-  const newCommitment = await compactBalanceCommit(vault.balance, newOpening);
-  const res = await fetch(`/api/users/${encodeURIComponent(vault.userId)}/reseal-balance`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      oldBalanceCommitment: vault.balanceCommitment,
-      newBalanceCommitment: newCommitment,
-    }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.ok === false) {
-    throw new Error(
-      data.reason || data.error || "Could not reseal balance opening for Compact credit"
-    );
-  }
-
-  const next: DeviceVaultState = {
-    ...vault,
-    balanceOpening: newOpening,
-    balanceCommitment: newCommitment,
-    balanceNonce: vault.balanceNonce || randomNonce(),
-  };
-  await saveVault(next);
-  return next;
 }

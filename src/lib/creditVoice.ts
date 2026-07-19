@@ -1,5 +1,5 @@
 /**
- * Voice intents for Circled Credit v1 — borrow / repay / standing.
+ * Voice intents for Circle Credit v1 — borrow / repay / standing.
  * Parsed before payment intents so "loan" phrases never become fake recipients.
  */
 import { replaceSpokenNumbers } from "./spokenNumbers";
@@ -34,8 +34,8 @@ function lightClean(raw: string): string {
       /\b(um+|uh+|please|pls|can you|could you|i want to|i wanna|i'd like to|i would like to|go ahead and|just|okay|ok|alright|so+|well|कृपया)\b/gi,
       " "
     )
-    .replace(/^(hey|hi|hello|yo)\s+(circled|nyx)\s+/i, "")
-    .replace(/^(circled|nyx)\s+/i, "")
+    .replace(/^(hey|hi|hello|yo)\s+(circle|circled|nyx)\s+/i, "")
+    .replace(/^(circle|circled|nyx)\s+/i, "")
     .replace(/\b(rupees?|dollars?|euros?|pounds?|inr|rs\.?)\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -85,7 +85,7 @@ export function looksLikeCreditUtterance(raw: string): boolean {
 }
 
 /**
- * Parse a Circled Credit voice command.
+ * Parse a Circle Credit voice command.
  * Returns null if this is not a credit utterance (caller should try payment parse).
  */
 export function parseCreditUtterance(raw: string): CreditVoiceIntent | null {

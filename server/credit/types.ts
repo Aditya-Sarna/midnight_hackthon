@@ -1,5 +1,5 @@
 /**
- * Circled Credit v1 — same-asset, fully overcollateralized lending.
+ * Circle Credit v1 — same-asset, fully overcollateralized lending.
  * NOT undercollateralized. NOT zero-collateral. See docs/CREDIT.md §1.
  */
 export const CREDIT_SKILL = "circled-credit";

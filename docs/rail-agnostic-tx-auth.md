@@ -1,6 +1,6 @@
 # Rail-Agnostic Transaction Authorization
 
-Reference implementation of the a26z-Brand **intent authorization** skill for Circled.
+Reference implementation of the a26z-Brand **intent authorization** skill for Circle.
 
 ## Deliverables map
 

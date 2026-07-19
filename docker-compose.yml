@@ -1,4 +1,4 @@
-# Full Circled stack — proof-server + API + static frontend + Redis
+# Full Circle stack — proof-server + API + static frontend + Redis
 # Usage: docker compose up --build
 services:
   redis:

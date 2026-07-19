@@ -46,51 +46,89 @@ export type DeviceKeypair = {
   keyRef?: string;
 };
 
+export type GeneratedKeypair = {
+  keypair: DeviceKeypair;
+  /** One-shot JWKs for passphrase recovery kit — discard after sealing the kit */
+  recoveryJwks?: {
+    privateKeyJwk: JsonWebKey;
+    encPrivateKeyJwk: JsonWebKey;
+  };
+};
+
 /**
  * Generate device keys. Pass userId to seal privates as non-extractable CryptoKeys (production).
- * Without userId (unit tests), JWKs are returned extractable for hermetic node crypto.
+ * Always generates extractable first so a one-shot recovery JWK export exists for the kit.
  */
 export async function generateKeypair(userId?: string): Promise<DeviceKeypair> {
+  const out = await generateKeypairWithRecovery(userId);
+  return out.keypair;
+}
+
+export async function generateKeypairWithRecovery(
+  userId?: string
+): Promise<GeneratedKeypair> {
   const seal = Boolean(userId);
+  // Extractable so we can export JWKs once into a passphrase kit, then re-import non-extractable.
   const pair = await crypto.subtle.generateKey(
     { name: "ECDSA", namedCurve: "P-256" },
-    !seal,
+    true,
     ["sign", "verify"]
   );
   const enc = await crypto.subtle.generateKey(
     { name: "ECDH", namedCurve: "P-256" },
-    !seal,
+    true,
     ["deriveBits"]
   );
   const publicKeyJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
   const encPublicKeyJwk = await crypto.subtle.exportKey("jwk", enc.publicKey);
+  const privateKeyJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+  const encPrivateKeyJwk = await crypto.subtle.exportKey("jwk", enc.privateKey);
   const spki = await crypto.subtle.exportKey("spki", pair.publicKey);
   const pubkey = await sha256(new Uint8Array(spki));
 
   if (seal && userId) {
+    // Re-import as non-extractable for day-to-day Class 0 use
+    const signPrivate = await crypto.subtle.importKey(
+      "jwk",
+      privateKeyJwk,
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["sign"]
+    );
+    const encPrivate = await crypto.subtle.importKey(
+      "jwk",
+      encPrivateKeyJwk,
+      { name: "ECDH", namedCurve: "P-256" },
+      false,
+      ["deriveBits"]
+    );
     const keyRef = await sealDeviceKeys(
-      { signPrivate: pair.privateKey, encPrivate: enc.privateKey },
+      { signPrivate, encPrivate },
       pubkey,
       userId
     );
     return {
-      publicKeyJwk,
-      pubkey,
-      encPublicKeyJwk,
-      sealed: true,
-      keyRef,
+      keypair: {
+        publicKeyJwk,
+        pubkey,
+        encPublicKeyJwk,
+        sealed: true,
+        keyRef,
+      },
+      recoveryJwks: { privateKeyJwk, encPrivateKeyJwk },
     };
   }
 
-  const privateKeyJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
-  const encPrivateKeyJwk = await crypto.subtle.exportKey("jwk", enc.privateKey);
   return {
-    privateKeyJwk,
-    publicKeyJwk,
-    pubkey,
-    encPrivateKeyJwk,
-    encPublicKeyJwk,
-    sealed: false,
+    keypair: {
+      privateKeyJwk,
+      publicKeyJwk,
+      pubkey,
+      encPrivateKeyJwk,
+      encPublicKeyJwk,
+      sealed: false,
+    },
+    recoveryJwks: { privateKeyJwk, encPrivateKeyJwk },
   };
 }
 

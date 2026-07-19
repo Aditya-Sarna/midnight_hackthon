@@ -129,6 +129,20 @@ export function assertProductionBoot() {
   if (cfg.isProduction && !process.env.API_SKILL_TOKEN) {
     missing.push("API_SKILL_TOKEN (required to lock /api/skills in production)");
   }
+  if (
+    cfg.isProduction &&
+    process.env.NYXPAY_ALLOW_DEMO_SEED === "1" &&
+    process.env.NYXPAY_BOOT_SOFT !== "1"
+  ) {
+    missing.push("unset NYXPAY_ALLOW_DEMO_SEED (demo seeds forbidden in production)");
+  }
+  if (
+    cfg.isProduction &&
+    process.env.NYXPAY_ALLOW_STUB_RAILS === "1" &&
+    process.env.NYXPAY_BOOT_SOFT !== "1"
+  ) {
+    missing.push("unset NYXPAY_ALLOW_STUB_RAILS (use internal_ledger or a live PSP)");
+  }
   if (missing.length) {
     throw new Error(
       `[circled] Strict boot refused — missing: ${missing.join(", ")}. ` +

@@ -1,11 +1,15 @@
 /**
  * WebAuthn / passkey unlock for Class 0 vault.
- * Opt-in: never interrupts voice→confirm until a passkey is enrolled.
- * Touch/Face ID only challenges when a credential already exists.
+ * High-value settles require biometric when enrolled (or when requireBiometric is set).
  */
 const CRED_KEY = "circled_webauthn_cred_v1";
 const UNLOCK_UNTIL_KEY = "circled_vault_unlocked_until";
-const UNLOCK_TTL_MS = 5 * 60_000;
+/** Production-leaning default: 2m soft session; demos still soft-unlock without passkey */
+const UNLOCK_TTL_MS =
+  typeof import.meta !== "undefined" &&
+  (import.meta as { env?: { PROD?: boolean } }).env?.PROD
+    ? 2 * 60_000
+    : 5 * 60_000;
 
 function bufToB64(buf: ArrayBuffer): string {
   return btoa(String.fromCharCode(...new Uint8Array(buf)));
@@ -51,6 +55,7 @@ function markUnlocked() {
   }
 }
 
+/** Soft-lock vault session (e.g. app backgrounded) */
 export function lockVaultSession() {
   try {
     sessionStorage.removeItem(UNLOCK_UNTIL_KEY);
@@ -59,7 +64,7 @@ export function lockVaultSession() {
   }
 }
 
-/** Register a platform passkey bound to this origin + user (opt-in from settings) */
+/** Register a platform passkey bound to this origin + user (Settings → Security) */
 export async function registerVaultPasskey(userId: string, displayName: string): Promise<boolean> {
   if (!webauthnAvailable()) return false;
   const challenge = crypto.getRandomValues(new Uint8Array(32));
@@ -67,11 +72,11 @@ export async function registerVaultPasskey(userId: string, displayName: string):
   const cred = (await navigator.credentials.create({
     publicKey: {
       challenge,
-      rp: { name: "Circled", id: location.hostname },
+      rp: { name: "Circle", id: location.hostname },
       user: {
         id: userIdBytes,
         name: `circled:${userId}`,
-        displayName: displayName || "Circled vault",
+        displayName: displayName || "Circle vault",
       },
       pubKeyCredParams: [
         { type: "public-key", alg: -7 },
@@ -101,15 +106,9 @@ export async function registerVaultPasskey(userId: string, displayName: string):
 
 /** Assert passkey — unlocks vault session for UNLOCK_TTL_MS */
 export async function unlockVaultWithPasskey(): Promise<boolean> {
-  if (!webauthnAvailable()) {
-    markUnlocked();
-    return true;
-  }
+  if (!webauthnAvailable()) return false;
   const raw = localStorage.getItem(CRED_KEY);
-  if (!raw) {
-    markUnlocked();
-    return true;
-  }
+  if (!raw) return false;
   const saved = JSON.parse(raw) as { id: string; rawId: string };
   const challenge = crypto.getRandomValues(new Uint8Array(32));
   const assertion = await navigator.credentials.get({
@@ -133,27 +132,58 @@ export async function unlockVaultWithPasskey(): Promise<boolean> {
 }
 
 /**
- * Gate for settle — never pops a passkey *registration* during voice pay.
- * Soft-unlocks when no credential is enrolled (demo / first-run).
- * Only challenges biometrics if the user already opted into a vault passkey.
+ * Gate for settle.
+ * - Default: soft-unlock if no passkey enrolled (first-run / demo).
+ * - requireBiometric: fail-closed unless passkey assertion succeeds (high-value).
  */
-export async function ensureVaultUnlocked(_opts: {
+export async function ensureVaultUnlocked(opts: {
   userId: string;
   displayName: string;
-}): Promise<{ ok: boolean; reason?: string }> {
-  if (isVaultUnlocked()) return { ok: true };
-  if (!hasWebauthnCredential() || !webauthnAvailable()) {
+  requireBiometric?: boolean;
+}): Promise<{ ok: boolean; reason?: string; stepUp?: { kind: "passkey"; at: number } }> {
+  if (isVaultUnlocked() && !opts.requireBiometric) return { ok: true };
+  if (isVaultUnlocked() && opts.requireBiometric && hasWebauthnCredential()) {
+    // Still re-challenge for high-value
+  } else if (isVaultUnlocked() && opts.requireBiometric && !hasWebauthnCredential()) {
+    return {
+      ok: false,
+      reason: "Enroll a vault passkey in Settings before high-value payments",
+    };
+  }
+
+  if (!opts.requireBiometric && (!hasWebauthnCredential() || !webauthnAvailable())) {
     markUnlocked();
     return { ok: true };
   }
+
+  if (opts.requireBiometric && !hasWebauthnCredential()) {
+    return {
+      ok: false,
+      reason: "Enroll a vault passkey in Settings before high-value payments",
+    };
+  }
+
+  if (!webauthnAvailable()) {
+    if (opts.requireBiometric) {
+      return { ok: false, reason: "Biometrics unavailable on this device" };
+    }
+    markUnlocked();
+    return { ok: true };
+  }
+
   try {
     const unlocked = await unlockVaultWithPasskey();
     if (!unlocked) {
       return { ok: false, reason: "Biometric unlock cancelled — try Accept again" };
     }
-    return { ok: true };
+    return {
+      ok: true,
+      stepUp: { kind: "passkey", at: Date.now() },
+    };
   } catch {
-    // Platform authenticator flake must not kill voice settle
+    if (opts.requireBiometric) {
+      return { ok: false, reason: "Biometric unlock failed — try again" };
+    }
     markUnlocked();
     return { ok: true };
   }

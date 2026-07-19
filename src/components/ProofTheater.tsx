@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { ComplianceStrip } from "./ComplianceStrip";
-import { CircledProofPanel } from "./CircledProofPanel";
+import { CircleProofPanel } from "./CircleProofPanel";
 
 type ProofEvent = {
   id: string;
@@ -102,7 +102,7 @@ export function ProofTheater({ refreshKey = 0, liveProofs = [], focus = null }: 
     },
     {
       id: "nyxproof",
-      title: "CircledProof session auth",
+      title: "Circle session auth",
       circuit: "prove_session_auth",
       detail: "OTP replacement · challenge-bound · nonce burn",
       status: liveProofs.some((p) => p.circuit.includes("session_auth")) ? "live" : "pending",
@@ -118,8 +118,16 @@ export function ProofTheater({ refreshKey = 0, liveProofs = [], focus = null }: 
           <p className="theater__eyebrow">Midnight proof theater</p>
           <h2>Live verification</h2>
         </div>
-        <span className="theater__badge">{mode}</span>
+        <span className={`theater__badge${serverOk ? " theater__badge--gold" : ""}`}>
+          {serverOk ? "zk-proved ready" : mode}
+        </span>
       </header>
+
+      <p className={`theater__gold${serverOk ? " theater__gold--on" : ""}`}>
+        {serverOk
+          ? "Proof server live · SNARK settle (grade zk-proved)"
+          : "Compact-runtime · start proof-server for zk-proved"}
+      </p>
 
       <div className="theater__root">
         <span>kyc_registry_root</span>
@@ -128,7 +136,7 @@ export function ProofTheater({ refreshKey = 0, liveProofs = [], focus = null }: 
       <p className="theater__mode muted">
         {modeDetail || `Compact transfers ${transfers}`}
         {serverOk
-          ? " · SNARK path: proof-server /prove (grade zk-proved on settle)"
+          ? " · SNARK path: proof-server /prove"
           : " · Compact-runtime until proof-server is up"}
       </p>
 
@@ -176,7 +184,7 @@ export function ProofTheater({ refreshKey = 0, liveProofs = [], focus = null }: 
       </div>
 
       <ComplianceStrip />
-      <CircledProofPanel />
+      <CircleProofPanel />
     </aside>
   );
 }

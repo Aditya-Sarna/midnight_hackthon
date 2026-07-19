@@ -32,12 +32,12 @@ export type GuideStep = {
   autoMs?: number;
 };
 
-export const GUIDE_FRIEND_NAME = "Circled";
+export const GUIDE_FRIEND_NAME = "Circle";
 
 export const GUIDE_STEPS: GuideStep[] = [
   {
     id: "hello",
-    say: "Hey — I’m Circled. I’ll walk you through the app. You don’t need to know ZK. Just tap Next, or hit Autoplay and watch.",
+    say: "Hey — I’m Circle. I’ll walk you through the app. You don’t need to know ZK. Just tap Next, or hit Autoplay and watch.",
     boxes: [
       {
         title: "What you’re looking at",
@@ -50,11 +50,11 @@ export const GUIDE_STEPS: GuideStep[] = [
   },
   {
     id: "class0",
-    say: "First rule of Circled: secrets never leave this phone. Balance, contacts, keys — Class 0, device-only.",
+    say: "First rule of Circle: secrets never leave this phone. Balance, contacts, keys — Class 0, device-only.",
     boxes: [
       {
         title: "Class 0 — device vault",
-        body: "Private key, balance, policy params, contact list stay on-device. The server never sees them.",
+        body: "Private key, balance, policy params, contact list stay on-device. The public ledger never sees preimages — only commitments and nullifiers.",
         tag: "privacy",
       },
       {
@@ -86,7 +86,7 @@ export const GUIDE_STEPS: GuideStep[] = [
   },
   {
     id: "open-app",
-    say: "Opening Circled on the phone. This is the everyday surface — speak or type a payment.",
+    say: "Opening Circle on the phone. This is the everyday surface — speak or type a payment.",
     boxes: [
       {
         title: "Ease of use",
@@ -125,10 +125,10 @@ export const GUIDE_STEPS: GuideStep[] = [
   },
   {
     id: "confirm-tap",
-    say: "Confirm tap replaces OTP. CircledProof binds this intent — nothing phishable, nothing to SMS.",
+    say: "Confirm tap replaces OTP. Circle binds this intent — nothing phishable, nothing to SMS.",
     boxes: [
       {
-        title: "CircledProof · prove_session_auth",
+        title: "Circle · prove_session_auth",
         body: "Device proves it holds a valid KYC credential for this challenge, relying party, and time window. Nonce burns once.",
         tag: "zk",
       },
@@ -154,24 +154,24 @@ export const GUIDE_STEPS: GuideStep[] = [
       },
       {
         title: "Compact path",
-        body: "Circuits ran against compactc artifacts. Proof mode on the right shows compact-runtime or proof-server.",
+        body: "Gold path: Compact execute + proof-server /prove. Look for grade zk-proved on the success screen and Systems Theater.",
         tag: "midnight",
       },
     ],
     theaterFocus: "ledger",
-    autoMs: 5500,
+    autoMs: 4800,
   },
   {
     id: "wrap",
-    say: "That’s the whole cycle: easy phone UX ↔ live ZK ↔ Midnight public state. Try Reset demo anytime, or keep tapping around.",
+    say: "That’s the cycle: voice UX, Circle instead of OTP, Compact spend, zk-proved settle. Pilot-ready on Midnight.",
     boxes: [
       {
         title: "Pitch in one line",
-        body: "Confidential voice payments on Midnight — Class 0 on device, Compact proofs for spend, CircledProof instead of OTP.",
+        body: "Confidential voice payments on Midnight — Class 0 on device, Compact proofs for spend, Circle instead of OTP.",
         tag: "device",
       },
     ],
     action: { type: "idle" },
-    autoMs: 6000,
+    autoMs: 5000,
   },
 ];

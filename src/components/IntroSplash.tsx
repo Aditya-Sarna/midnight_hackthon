@@ -14,15 +14,17 @@ export function IntroSplash({ onFinished }: Props) {
   const [fading, setFading] = useState(false);
   const [live, setLive] = useState(false);
   const finished = useRef(false);
+  const active = useRef(true);
 
   const finish = () => {
-    if (finished.current) return;
+    if (finished.current || !active.current) return;
     finished.current = true;
     setFading(true);
     window.setTimeout(() => onFinishedRef.current(), 700);
   };
 
   useEffect(() => {
+    active.current = true;
     const el = videoRef.current;
     if (!el) return;
     el.muted = true;
@@ -37,9 +39,17 @@ export function IntroSplash({ onFinished }: Props) {
     const play = el.play();
     if (play && typeof play.catch === "function") {
       play.catch(() => {
-        /* autoplay blocked — user can still Enter demo */
+        /* autoplay blocked — user can still See demo */
       });
     }
+    return () => {
+      active.current = false;
+      try {
+        el.pause();
+      } catch {
+        /* ignore */
+      }
+    };
   }, []);
 
   return (
@@ -59,7 +69,9 @@ export function IntroSplash({ onFinished }: Props) {
           preload="auto"
           disablePictureInPicture
           onPlaying={() => setLive(true)}
-          onError={finish}
+          onError={() => {
+            if (active.current) finish();
+          }}
         />
         <span className="intro-splash__grade" />
       </div>
@@ -67,7 +79,7 @@ export function IntroSplash({ onFinished }: Props) {
       <div className="intro-splash__dock">
         <div className="intro-splash__brand-row">
           <img src="/glyph.png" alt="" className="intro-splash__glyph" />
-          <strong>Circled</strong>
+          <strong>Circle</strong>
         </div>
         <div className="intro-splash__actions">
           <button
@@ -75,7 +87,7 @@ export function IntroSplash({ onFinished }: Props) {
             className="intro-splash__btn intro-splash__btn--primary"
             onClick={finish}
           >
-            Enter demo
+            See demo
           </button>
         </div>
       </div>

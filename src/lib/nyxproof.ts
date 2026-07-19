@@ -1,10 +1,10 @@
 /**
- * CircledProof — client-side prove_session_auth (Class 0 witnesses stay on device).
+ * Circle session auth — client-side prove_session_auth (Class 0 witnesses stay on device).
  */
 import { makeProof, sha256, signMessage } from "./crypto";
 import type { DeviceVaultState } from "./deviceVault";
 
-export type CircledProofChallenge = {
+export type CircleProofChallenge = {
   nonce: string;
   relyingPartyId: string;
   timeWindow: string;
@@ -21,7 +21,7 @@ export type CircledProofChallenge = {
  */
 export async function proveSessionAuth(
   vault: DeviceVaultState,
-  challenge: CircledProofChallenge
+  challenge: CircleProofChallenge
 ) {
   if (Date.now() > challenge.expiresAt) {
     throw new Error("Challenge expired before proof generation");

@@ -135,10 +135,16 @@ export const api = {
   vault: (id: string) =>
     req<{ threshold: number; holders: { id: string; label: string }[] }>(`/users/${id}/vault`),
   recover: (id: string, holderIds: string[]) =>
-    req<{ ciphertext: string; shares: string[]; threshold: number; note?: string }>(
-      `/users/${id}/vault/recover`,
-      { method: "POST", body: JSON.stringify({ holderIds }) }
-    ),
+    req<{
+      ciphertext: string;
+      clientCiphertext?: string;
+      shares: string[];
+      threshold: number;
+      note?: string;
+    }>(`/users/${id}/vault/recover`, {
+      method: "POST",
+      body: JSON.stringify({ holderIds }),
+    }),
   lookupBrand: (recipient: string) =>
     req<BrandLookup>("/brands/lookup", {
       method: "POST",

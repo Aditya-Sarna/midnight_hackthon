@@ -1,14 +1,16 @@
 /**
- * Circled Credit v1 — client helpers (Class 0 openings never leave the device).
+ * Circle Credit v1 — client helpers (Class 0 openings never leave the device).
  */
 import { compactBalanceCommit, randomOpeningHex } from "./compactCommit";
 import type { DeviceVaultState } from "./deviceVault";
 import {
+  alignBalanceCommitmentWithServer,
   applyCredit,
   applySpend,
   ensureCompactBalanceWitness,
   saveVault,
 } from "./deviceVault";
+import { defaultCollateralForLoan } from "./creditVoice";
 async function post(path: string, body: unknown) {
   const res = await fetch(path, {
     method: "POST",
@@ -37,6 +39,20 @@ export async function fetchBorrowDisclosure(input: {
     collateralAmount: String(input.collateralAmount),
   });
   if (input.installments != null) q.set("installments", String(input.installments));
+  const res = await fetch(`/api/skills/circled-credit/disclosure?${q}`);
+  return res.json();
+}
+
+/** Term packages shown after a borrow ask — Quick / Standard / Flex / Stretch */
+export async function fetchBorrowDeals(input: {
+  loanAmount: number;
+  collateralAmount: number;
+}) {
+  const q = new URLSearchParams({
+    loanAmount: String(input.loanAmount),
+    collateralAmount: String(input.collateralAmount),
+    deals: "1",
+  });
   const res = await fetch(`/api/skills/circled-credit/disclosure?${q}`);
   return res.json();
 }
@@ -94,16 +110,25 @@ export async function creditBorrow(
   vault: DeviceVaultState,
   input: { loanAmount: number; collateralAmount: number; installments?: number }
 ) {
-  const { loanAmount, collateralAmount } = input;
+  const loanAmount = Math.floor(Number(input.loanAmount));
+  const collateralAmount = Math.floor(
+    Number(input.collateralAmount) || defaultCollateralForLoan(loanAmount)
+  );
+  if (!(loanAmount > 0)) throw new Error("Enter a loan amount");
   if (2 * collateralAmount < 3 * loanAmount) {
-    throw new Error(`Need ≥150% collateral (min ${Math.ceil((loanAmount * 3) / 2)})`);
+    throw new Error(`Need ≥150% collateral (min ${defaultCollateralForLoan(loanAmount)})`);
   }
   if (vault.balance < collateralAmount) {
-    throw new Error("Insufficient free balance to lock collateral");
+    throw new Error(
+      `Need ${collateralAmount} free balance to lock collateral — Add money first`
+    );
   }
 
-  // Heal legacy / desynced openings before Compact prove_collateral_lock
-  const synced = await ensureCompactBalanceWitness(vault);
+  // Heal drift, then Compact prove_collateral_lock
+  let synced = await alignBalanceCommitmentWithServer(vault).catch(() =>
+    ensureCompactBalanceWitness(vault)
+  );
+  synced = await ensureCompactBalanceWitness(synced);
   const oldOpening = synced.balanceOpening!;
   const afterLockOpening = randomOpeningHex();
   const collateralOpening = randomOpeningHex();
@@ -142,18 +167,29 @@ export async function creditBorrow(
     },
   });
 
-  // Local vault: apply lock then credit disbursement
-  let next = await applySpend(synced, collateralAmount, synced.policy.periodCounters, {
-    balanceNonce: synced.balanceNonce,
-    balanceOpening: afterLockOpening,
-    balanceCommitment: newBalanceCommitment,
-    policyNonce: synced.policy.nonce,
-    policyCommitment: synced.policy.commitment,
-  });
-  next = await applyCredit(next, loanAmount, {
-    balanceOpening: disbursedOpening,
-    balanceCommitment: disbursedBalanceCommitment,
-  });
+  // Local vault: lock collateral, then credit disbursement (loan history — not a payment)
+  let next = await applySpend(
+    synced,
+    collateralAmount,
+    synced.policy.periodCounters,
+    {
+      balanceNonce: synced.balanceNonce,
+      balanceOpening: afterLockOpening,
+      balanceCommitment: newBalanceCommitment,
+      policyNonce: synced.policy.nonce,
+      policyCommitment: synced.policy.commitment,
+    },
+    { recipient: "Collateral locked", category: "loan" }
+  );
+  next = await applyCredit(
+    next,
+    loanAmount,
+    {
+      balanceOpening: disbursedOpening,
+      balanceCommitment: disbursedBalanceCommitment,
+    },
+    { recipient: "Loan disbursed", category: "loan" }
+  );
   // Track locked collateral privately on device
   const locked = {
     ...(next as DeviceVaultState & { lockedCollateral?: Record<string, number> }).lockedCollateral,

@@ -2,7 +2,7 @@
  * Credit-scoped identity — deliberate exception to payment unlinkability (§2 Problem B).
  *
  * credit_identity = hash(kyc_leaf, "credit-scope-salt")
- * Deterministic per KYC person; never used in payments or Circled-Auth session proofs.
+ * Deterministic per KYC person; never used in payments or Circle-Auth session proofs.
  */
 import { createHash } from "node:crypto";
 import {

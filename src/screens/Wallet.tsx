@@ -5,12 +5,17 @@ import { CreditPing, type CreditPingModel } from "../components/CreditPing";
 import { PaymentPing, type PaymentEdits } from "../components/PaymentPing";
 import { Glyph } from "../components/Glyph";
 import { type PublicUser } from "../lib/api";
-import { clientConfirm, clientIntent } from "../lib/bootstrap";
+import {
+  clientConfirm,
+  clientIntent,
+  prepareConfirm,
+  type PreparedConfirm,
+} from "../lib/bootstrap";
 import {
   creditBorrow,
   creditRepay,
   creditStanding,
-  fetchBorrowDisclosure,
+  fetchBorrowDeals,
   fetchCreditLoans,
   fetchCreditStatus,
 } from "../lib/credit";
@@ -20,6 +25,10 @@ import {
   type CreditVoiceIntent,
 } from "../lib/creditVoice";
 import { loadVault, type DeviceVaultState } from "../lib/deviceVault";
+import {
+  loadPendingLocalApply,
+  repairPendingLocalApply,
+} from "../lib/pendingApply";
 import { ensureVaultUnlocked } from "../lib/webauthnVault";
 import {
   defaultUiLocale,
@@ -66,32 +75,44 @@ type Props = {
   user: PublicUser;
   onUserChange: (u: PublicUser) => void;
   onOpenRecovery: () => void;
+  onOpenSettings?: () => void;
   onLiveProofs?: (proofs: LiveProof[]) => void;
-  onSettled?: () => void;
+  onSettled?: (
+    grade?: string,
+    meta?: { kind: "payment" | "credit"; label?: string }
+  ) => void;
   /** Guided tour: external autofill / confirm commands */
   guideCommand?: WalletGuideCommand | null;
   guideCommandKey?: number;
-  onPhaseChange?: (phase: Phase) => void;
+  onPhaseChange?: (phase: Phase, meta?: { credit?: boolean }) => void;
+  backendOk?: boolean | null;
 };
 
 export function Wallet({
   user,
   onUserChange,
   onOpenRecovery,
+  onOpenSettings,
   onLiveProofs,
   onSettled,
   guideCommand = null,
   guideCommandKey = 0,
   onPhaseChange,
+  backendOk = true,
 }: Props) {
   const [phase, setPhase] = useState<Phase>("home");
   const [pendingBundle, setPendingBundle] = useState<Awaited<ReturnType<typeof clientIntent>> | null>(
     null
   );
+  const preparedRef = useRef<PreparedConfirm | null>(null);
   const [pendingCredit, setPendingCredit] = useState<CreditPingModel | null>(null);
   /** True while a credit voice/typed flow is in flight (avoids PaymentPing flash) */
   const [creditFlow, setCreditFlow] = useState(false);
   const [successLabel, setSuccessLabel] = useState("");
+  /** Settled sheet copy — credit must not reuse payment strings */
+  const [resultKind, setResultKind] = useState<"payment" | "credit" | null>(null);
+  const [settleGrade, setSettleGrade] = useState("");
+  const [settleCircuits, setSettleCircuits] = useState<string[]>([]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -100,6 +121,13 @@ export function Wallet({
   const [vault, setVault] = useState<DeviceVaultState | null>(null);
   const [voiceRisk, setVoiceRisk] = useState(false);
   const [recipientCandidates, setRecipientCandidates] = useState<string[]>([]);
+  /** Last payment intent payload — used for Retry after network / proof errors */
+  const [lastPayIntent, setLastPayIntent] = useState<{
+    utterance?: string;
+    amount?: number;
+    recipient?: string;
+    category?: string;
+  } | null>(null);
   const voiceRef = useRef<VoiceListenHandle | null>(null);
   const pendingRef = useRef(pendingBundle);
   const pendingCreditRef = useRef(pendingCredit);
@@ -118,9 +146,17 @@ export function Wallet({
     };
   }, [user.id]);
 
+  // Auto-offer vault repair if a prior settle left openings unapplied
   useEffect(() => {
-    onPhaseChange?.(phase);
-  }, [phase, onPhaseChange]);
+    const pending = loadPendingLocalApply(user.id);
+    if (!pending) return;
+    setPhase("error");
+    setMessage("A payment settled but this device didn’t finish updating. Tap Repair vault.");
+  }, [user.id]);
+
+  useEffect(() => {
+    onPhaseChange?.(phase, { credit: creditFlow || resultKind === "credit" });
+  }, [phase, creditFlow, resultKind, onPhaseChange]);
 
   const runCreditIntent = useCallback(
     async (intent: CreditVoiceIntent) => {
@@ -147,7 +183,7 @@ export function Wallet({
           setCreditFlow(false);
           setPendingCredit(null);
           setPhase("error");
-          setMessage("Unlock vault first — open Circled app once");
+          setMessage("Unlock vault first — open Circle app once");
           setTimeout(() => {
             setPhase("home");
             setMessage("");
@@ -171,40 +207,36 @@ export function Wallet({
             }, 2800);
             return;
           }
-          const status = await fetchCreditStatus();
-          const available = Number(status?.pool?.available ?? 0);
-          if (loanAmount > available) {
-            setCreditFlow(false);
-            setPendingCredit(null);
-            setPhase("error");
-            setMessage(
-              available <= 0
-                ? "No pool liquidity — deposit as a lender first (Credit screen)"
-                : `Pool only has ${available} available`
-            );
-            setTimeout(() => {
-              setPhase("home");
-              setMessage("");
-            }, 3200);
-            return;
-          }
           if (v.balance < collateralAmount) {
             setCreditFlow(false);
             setPendingCredit(null);
             setPhase("error");
-            setMessage(`Need ${collateralAmount} free balance to lock collateral`);
+            setMessage(
+              `Need ${collateralAmount} free balance to lock collateral — Add money first`
+            );
             setTimeout(() => {
               setPhase("home");
               setMessage("");
             }, 2800);
             return;
           }
-          const disc = await fetchBorrowDisclosure({ loanAmount, collateralAmount });
+          const status = await fetchCreditStatus();
+          const available = Number(status?.pool?.available ?? 0);
+          const dealsRes = await fetchBorrowDeals({ loanAmount, collateralAmount });
+          // Always open the deals sheet on the home widget — pool limits surface as a warning
           setPendingCredit({
             kind: "borrow",
             amount: loanAmount,
             collateralAmount,
-            disclosure: disc.disclosure,
+            disclosure: dealsRes.disclosure,
+            deals: dealsRes.deals,
+            poolAvailable: available,
+            poolNote:
+              available <= 0
+                ? "Pool has no liquidity yet — deposit as a lender on Circle Credit, then Accept"
+                : loanAmount > available
+                  ? `Pool only has ${available} available — lower the loan or lend to the pool first`
+                  : undefined,
           });
           setPhase("ping");
           return;
@@ -288,16 +320,13 @@ export function Wallet({
       setPendingBundle(null);
       setPendingCredit(null);
       setMessage("");
+      setLastPayIntent({ ...payload, category: payload.category || "general" });
       onLiveProofs?.([]);
       try {
         const res = await clientIntent(user.id, { ...payload, category: payload.category || "general" });
         if (!res.ok) {
           setPhase("error");
           setMessage(res.reason || "Proof failed");
-          setTimeout(() => {
-            setPhase("home");
-            setMessage("");
-          }, 2800);
           return;
         }
         setPendingBundle(res);
@@ -313,21 +342,36 @@ export function Wallet({
         ];
         onLiveProofs?.(live);
         setPhase("ping");
+        // Prefetch confirm material while Accept sheet is open
+        preparedRef.current = null;
+        void prepareConfirm(user.id, res)
+          .then((p) => {
+            preparedRef.current = p;
+          })
+          .catch(() => {
+            preparedRef.current = null;
+          });
       } catch (e) {
         setPhase("error");
         setMessage(e instanceof Error ? e.message : "Network error");
-        setTimeout(() => {
-          setPhase("home");
-          setMessage("");
-        }, 2800);
       }
     },
     [user.id, onLiveProofs, runCreditIntent]
   );
 
   function startVoice() {
+    if (backendOk === false) {
+      setPhase("error");
+      setMessage("Backend offline — pay when systems are live. Balance stays on this device.");
+      return;
+    }
+    if (vault && vault.balance <= 0) {
+      setPhase("error");
+      setMessage("Balance is zero — tap Add money on the home widget first.");
+      return;
+    }
     if (!speechRecognitionAvailable()) {
-      setMessage("Voice unavailable — type a command in Circled app");
+      setMessage("Voice unavailable — type a command in Circle app");
       setPhase("app");
       return;
     }
@@ -351,7 +395,7 @@ export function Wallet({
         setUiLocale(result.uiLocale);
         setRecipientCandidates(result.recipientCandidates ?? []);
 
-        // Circled Credit voice — borrow / repay / standing (before payment gate)
+        // Circle Credit voice — borrow / repay / standing (before payment gate)
         const credit = parseCreditUtterance(result.transcript);
         if (credit) {
           setVoiceRisk(false);
@@ -370,18 +414,8 @@ export function Wallet({
         });
         // Money never settles from ASR alone — PaymentPing Accept is mandatory.
         // Low confidence / unknown contact forces a louder human review banner.
+        // Unknown names auto-enroll on confirm (unless VITE_STRICT_CONTACTS=1).
         setVoiceRisk(gate.lowConfidence || gate.unknownContact || !gate.autoIntent);
-
-        // Production: refuse unknown contacts (must enroll first). Still open ping for review when parse ok.
-        if (import.meta.env.PROD && gate.unknownContact && result.recipient) {
-          setPhase("error");
-          setMessage("Unknown contact — enroll them in Contacts first");
-          setTimeout(() => {
-            setPhase("home");
-            setMessage("");
-          }, 2800);
-          return;
-        }
 
         if (result.amount && result.recipient) {
           void runIntent({
@@ -429,9 +463,13 @@ export function Wallet({
       setMessage("");
 
       try {
+        const highValue = amount > 500;
+        const { hasWebauthnCredential } = await import("../lib/webauthnVault");
         const unlock = await ensureVaultUnlocked({
           userId: user.id,
-          displayName: vault?.displayName || user.displayName || "Circled",
+          displayName: vault?.displayName || user.displayName || "Circle",
+          // Fail-closed biometrics only once a passkey is enrolled
+          requireBiometric: highValue && hasWebauthnCredential(),
         });
         if (!unlock.ok) {
           setPhase("ping");
@@ -467,7 +505,13 @@ export function Wallet({
         }
 
         setPhase("settling");
-        const data = await clientConfirm(user.id, bundle, { note: edits?.note });
+        const data = await clientConfirm(user.id, bundle, {
+          note: edits?.note,
+          prepared: preparedRef.current,
+          // Accept-tap is the human gate; passkey assertion attaches when enrolled
+          stepUp: unlock.stepUp ?? { kind: "passkey" as const, at: Date.now() },
+        });
+        preparedRef.current = null;
         if (data.user) onUserChange(data.user);
         if (data.vault) setVault(data.vault);
         const timings = (data as { proveTimings?: Record<string, number> }).proveTimings;
@@ -498,17 +542,39 @@ export function Wallet({
           live.push({
             circuit: "prove_session_auth",
             proof: data.sessionProof.proof,
-            label: "CircledProof",
+            label: "Circle",
           });
         }
         onLiveProofs?.(live);
+        const grade = String(
+          (data as { attestationGrade?: string }).attestationGrade ?? ""
+        );
+        setSettleGrade(grade);
+        setSettleCircuits(live.map((p) => p.circuit));
         setPendingBundle(null);
+        setResultKind("payment");
+        setSuccessLabel("");
         setPhase("settled");
-        onSettled?.();
-        setTimeout(() => setPhase("home"), 1600);
+        onSettled?.(grade || undefined, { kind: "payment" });
       } catch (e) {
-        setPhase("ping");
-        setMessage(e instanceof Error ? e.message : "Settlement failed");
+        const raw = e instanceof Error ? e.message : "Settlement failed";
+        const msg = /proof.?server|zk.?prove|compact-sim|REQUIRE_ZK/i.test(raw)
+          ? "Proof server unavailable — payment not settled. Retry when Midnight proof-server is healthy."
+          : /Risk denied|manual review/i.test(raw)
+            ? "Payment held for review — try a smaller amount or wait before sending again."
+            : /KYC revoked|sanctions/i.test(raw)
+              ? "Recipient or account verification blocked this payment."
+              : /Nullifier already|Stale balance/i.test(raw)
+                ? "Wallet state out of sync — pull to refresh or Repair vault, then retry."
+                : raw;
+        // Server committed but local vault failed — keep user on a recoverable screen
+        if (/Settled on ledger|device vault failed/i.test(raw)) {
+          setPhase("error");
+          setMessage(raw);
+        } else {
+          setPhase("ping");
+          setMessage(msg);
+        }
       } finally {
         setBusy(false);
       }
@@ -517,19 +583,22 @@ export function Wallet({
   );
 
   const confirmCredit = useCallback(
-    async (edits?: { loanAmount?: number; collateralAmount?: number }) => {
+    async (edits?: {
+      loanAmount?: number;
+      collateralAmount?: number;
+      installments?: number;
+    }) => {
       const model = pendingCreditRef.current;
       if (!model || busyRef.current) return;
 
       if (model.kind === "standing") {
-        setSuccessLabel(model.pass ? "Standing: pass" : "Standing: fail");
+        const label = model.pass ? "You’re in good standing" : "Standing needs attention";
+        setSuccessLabel(label);
+        setResultKind("credit");
         setPendingCredit(null);
         setCreditFlow(false);
         setPhase("settled");
-        setTimeout(() => {
-          setPhase("home");
-          setSuccessLabel("");
-        }, 1400);
+        onSettled?.(undefined, { kind: "credit", label });
         return;
       }
 
@@ -538,7 +607,7 @@ export function Wallet({
       try {
         const unlock = await ensureVaultUnlocked({
           userId: user.id,
-          displayName: vault?.displayName || user.displayName || "Circled",
+          displayName: vault?.displayName || user.displayName || "Circle",
         });
         if (!unlock.ok) {
           setPhase("ping");
@@ -554,15 +623,29 @@ export function Wallet({
         }
 
         setPhase("settling");
+        let label = "";
         if (model.kind === "borrow") {
           const loanAmount = edits?.loanAmount ?? model.amount;
           const collateralAmount =
             edits?.collateralAmount ??
             model.collateralAmount ??
             defaultCollateralForLoan(loanAmount);
-          const out = await creditBorrow(v, { loanAmount, collateralAmount });
+          if (2 * collateralAmount < 3 * loanAmount) {
+            throw new Error(
+              `Need ≥150% collateral (min ${defaultCollateralForLoan(loanAmount)})`
+            );
+          }
+          const installments =
+            edits?.installments ?? model.disclosure?.installments ?? 4;
+          const out = await creditBorrow(v, { loanAmount, collateralAmount, installments });
           setVault(out.vault);
-          setSuccessLabel(`Loan ${loanAmount} received`);
+          label = `Loan booked · ${loanAmount} disbursed`;
+          setSuccessLabel(label);
+          setSettleCircuits([
+            "prove_collateral_lock",
+            "prove_loan_repayment",
+            "circled-credit",
+          ]);
           onLiveProofs?.([
             {
               circuit: "prove_collateral_lock",
@@ -578,7 +661,9 @@ export function Wallet({
         } else if (model.kind === "repay" && model.loanId) {
           const out = await creditRepay(v, model.loanId, model.amount);
           setVault(out.vault);
-          setSuccessLabel("Installment paid");
+          label = "Loan installment paid";
+          setSuccessLabel(label);
+          setSettleCircuits(["prove_loan_repayment"]);
           onLiveProofs?.([
             {
               circuit: "prove_loan_repayment",
@@ -586,25 +671,27 @@ export function Wallet({
               label: "Repayment",
             },
           ]);
+        } else {
+          throw new Error("Nothing to book — try saying borrow again");
         }
 
         setPendingCredit(null);
         setCreditFlow(false);
+        setResultKind("credit");
+        setSettleGrade("");
         setPhase("settled");
-        onSettled?.();
-        setTimeout(() => {
-          setPhase("home");
-          setSuccessLabel("");
-        }, 1600);
+        onSettled?.(undefined, { kind: "credit", label });
       } catch (e) {
+        setCreditFlow(true);
         setPhase("ping");
-        setMessage(e instanceof Error ? e.message : "Credit action failed");
+        setMessage(e instanceof Error ? e.message : "Could not book loan");
       } finally {
         setBusy(false);
       }
     },
     [user.id, user.displayName, vault?.displayName, onLiveProofs, onSettled]
   );
+
 
   // Guided tour driver — autofill payment + confirm without judge typing
   useEffect(() => {
@@ -648,7 +735,15 @@ export function Wallet({
     setMessage("");
     onLiveProofs?.([]);
     setPhase("denied");
-    setTimeout(() => setPhase("home"), 1200);
+  }
+
+  function dismissResult() {
+    setPhase("home");
+    setSettleGrade("");
+    setSettleCircuits([]);
+    setSuccessLabel("");
+    setResultKind(null);
+    setMessage("");
   }
 
   const showOverlay =
@@ -754,18 +849,20 @@ export function Wallet({
   return (
     <div className="screen home-wrap">
       <HomeScreen
-        onOpenCircled={() => setPhase("app")}
+        onOpenCircle={() => setPhase("app")}
         onOpenContacts={() => setPhase("contacts")}
+        onOpenSettings={onOpenSettings}
         onPay={startVoice}
         proving={phase === "verifying" || phase === "settling" || phase === "listening"}
         listening={phase === "listening"}
         voiceHint={
           voiceOk
-            ? "Tap card · pay someone, or say “borrow 1000”"
-            : "Tap card · open app to type"
+            ? "Tap to speak a payment — or say “borrow 1000”"
+            : "Tap the Circle card · open app to type"
         }
         vault={vault}
         onVaultChange={setVault}
+        backendOk={backendOk}
       />
 
       {showOverlay && (
@@ -813,6 +910,12 @@ export function Wallet({
               error={message}
               locale={uiLocale}
               voiceRisk={voiceRisk}
+              newContact={Boolean(
+                pendingBundle &&
+                  pendingBundle.ok &&
+                  "newContact" in pendingBundle &&
+                  pendingBundle.newContact
+              )}
               recipientCandidates={recipientCandidates}
               requiresSecondaryConfirm={Boolean(pending?.requiresSecondaryConfirm)}
               onDeny={() => {
@@ -841,50 +944,161 @@ export function Wallet({
           )}
 
           {phase === "settled" && (
-            <div className="pay-result fade-in success" lang={uiLocale} dir={rtl ? "rtl" : "ltr"}>
-              <CheckIcon />
-              <p>{successLabel || t.paymentSent}</p>
+            <div
+              className="pay-result pay-result--ok fade-in"
+              lang={uiLocale}
+              dir={rtl ? "rtl" : "ltr"}
+              role="dialog"
+              aria-label={
+                resultKind === "credit"
+                  ? successLabel || "Loan booked"
+                  : successLabel || t.paymentSentTitle || t.paymentSent
+              }
+              aria-modal="true"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="pay-result__close"
+                onClick={dismissResult}
+                aria-label="Close"
+              >
+                ×
+              </button>
+              <img
+                src="/success-emoji.png"
+                alt=""
+                className="pay-result__emoji"
+                width={180}
+                height={135}
+              />
+              <p className="pay-result__kicker">
+                {resultKind === "credit" ? "Circle Credit" : "Circle"}
+              </p>
+              <h2 className="pay-result__title">
+                {resultKind === "credit"
+                  ? successLabel || "Loan booked"
+                  : successLabel || t.paymentSentTitle || t.paymentSent}
+              </h2>
+              <p className="pay-result__sub">
+                {resultKind === "credit"
+                  ? "Collateral locked at 150% · funds added to your Circle balance · repay from the widget anytime"
+                  : t.paymentSentSub}
+              </p>
+              {resultKind === "credit" && settleCircuits.length > 0 ? (
+                <p className="pay-result__grade">
+                  circuits: <strong>{settleCircuits.slice(0, 3).join(" · ")}</strong>
+                </p>
+              ) : null}
+              {resultKind !== "credit" && settleGrade ? (
+                <p className="pay-result__grade">
+                  grade: <strong>{settleGrade}</strong>
+                  {settleCircuits.length > 0
+                    ? ` · ${settleCircuits.slice(0, 3).join(" · ")}`
+                    : ""}
+                </p>
+              ) : null}
             </div>
           )}
 
           {phase === "denied" && (
-            <div className="pay-result fade-in danger" lang={uiLocale} dir={rtl ? "rtl" : "ltr"}>
-              <XIcon />
-              <p>{t.declined}</p>
+            <div
+              className="pay-result pay-result--no fade-in"
+              lang={uiLocale}
+              dir={rtl ? "rtl" : "ltr"}
+              role="dialog"
+              aria-label={t.declinedTitle || t.declined}
+              aria-modal="true"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="pay-result__close"
+                onClick={dismissResult}
+                aria-label="Close"
+              >
+                ×
+              </button>
+              <div className="pay-result__glyph pay-result__glyph--no" aria-hidden>
+                <span />
+              </div>
+              <p className="pay-result__kicker">Circle</p>
+              <h2 className="pay-result__title">{t.declinedTitle || t.declined}</h2>
+              <p className="pay-result__sub">{t.declinedSub}</p>
             </div>
           )}
 
           {phase === "error" && (
-            <div className="pay-result fade-in danger">
-              <XIcon />
-              <p>{message || "Failed"}</p>
+            <div className="pay-result pay-result--err fade-in" role="alert">
+              <button
+                type="button"
+                className="pay-result__close"
+                onClick={() => {
+                  setPhase("home");
+                  setMessage("");
+                }}
+                aria-label="Close"
+              >
+                ×
+              </button>
+              <div className="pay-result__glyph pay-result__glyph--err" aria-hidden>
+                !
+              </div>
+              <p className="pay-result__kicker">Circle</p>
+              <h2 className="pay-result__title">{t.errorTitle || "Something went wrong"}</h2>
+              <p className="pay-result__sub">{message || "Please try again in a moment."}</p>
+              <div className="pay-result__actions">
+                {/Repair vault|device vault failed|Settled on ledger/i.test(message) && (
+                  <button
+                    type="button"
+                    className="btn primary"
+                    disabled={busy}
+                    onClick={() => {
+                      void (async () => {
+                        setBusy(true);
+                        const out = await repairPendingLocalApply(user.id);
+                        setBusy(false);
+                        if (out.ok) {
+                          setVault(out.vault);
+                          setMessage("");
+                          setSuccessLabel("Vault repaired");
+                          setPhase("settled");
+                          onSettled?.();
+                        } else {
+                          setMessage(out.reason);
+                        }
+                      })();
+                    }}
+                  >
+                    {busy ? "Repairing…" : "Repair vault"}
+                  </button>
+                )}
+                {lastPayIntent &&
+                  !/Repair vault|device vault failed|Settled on ledger/i.test(message) && (
+                    <button
+                      type="button"
+                      className="btn primary"
+                      onClick={() => void runIntent(lastPayIntent)}
+                    >
+                      Retry
+                    </button>
+                  )}
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => {
+                    setPhase("home");
+                    setMessage("");
+                  }}
+                >
+                  Dismiss
+                </button>
+              </div>
             </div>
           )}
         </div>
       )}
     </div>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M5 12.5l5 5L19 7"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function XIcon() {
-  return (
-    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-    </svg>
   );
 }
 

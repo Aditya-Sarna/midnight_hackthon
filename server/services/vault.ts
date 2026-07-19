@@ -3,8 +3,10 @@
  * Reconstruction of Class 0 secrets happens on-device only.
  */
 import {
+  decryptBundle,
   encryptBundle,
   randomNonce,
+  reconstructSecret,
   splitSecret,
 } from "./crypto.js";
 import { saveStore, type Store } from "./store.js";
@@ -79,10 +81,15 @@ export function releaseSharesForRecovery(
   if (selected.length < vault.threshold) {
     throw new Error("Insufficient valid shares");
   }
+  const shares = selected.slice(0, vault.threshold).map((h) => h.share);
+  // Unwrap outer threshold layer → wrap-encrypted client blob (Class 0 still sealed on-device)
+  const keyHex = reconstructSecret(shares, vault.threshold);
+  const clientCiphertext = decryptBundle(vault.ciphertext, keyHex);
   return {
     ciphertext: vault.ciphertext,
-    shares: selected.slice(0, vault.threshold).map((h) => h.share),
+    clientCiphertext,
+    shares,
     threshold: vault.threshold,
-    note: "Decrypt on device only — server never sees reconstructed Class 0",
+    note: "Outer threshold unwrapped — decrypt Class 0 with this device wrap key only",
   };
 }

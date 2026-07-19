@@ -1,4 +1,4 @@
-# Circled Credit — v1
+# Circle Credit — v1
 
 Same-asset, **fully overcollateralized** lending on Midnight Compact. This is **not** undercollateralized lending and **not** zero-collateral lending.
 
@@ -15,7 +15,7 @@ Same-asset, **fully overcollateralized** lending on Midnight Compact. This is **
 
 - **Anchor:** KYC leaf from the core registry (`prove_kyc_membership`). One government-verified identity → one credit history.
 - **Scoped identity:** `credit_identity = hash(kyc_leaf, "circled:credit-scope-salt:v1")`.
-- **Deliberate exception:** `credit_identity` links loans for the same person inside the lending module only. It is never sent to payment counterparties or Circled-Auth relying parties, and never combined with payment nullifiers.
+- **Deliberate exception:** `credit_identity` links loans for the same person inside the lending module only. It is never sent to payment counterparties or Circle-Auth relying parties, and never combined with payment nullifiers.
 
 ## Circuits (Compact)
 
@@ -46,7 +46,7 @@ Endpoints: `GET /api/skills/circled-credit/compliance`, `GET .../disclosure`, `P
 
 ## Voice
 
-From the home card or Circled app mic (Accept + rate checkbox required for borrow):
+From the home card or Circle app mic (Accept + rate checkbox required for borrow):
 
 | Say | Action |
 |-----|--------|

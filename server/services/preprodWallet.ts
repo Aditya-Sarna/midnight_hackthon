@@ -108,7 +108,7 @@ async function submitUnshieldedSelfTransfer(
     walletCtx.wallet.state().pipe(
       Rx.filter((s) => nightBalance(s) > 0n),
       Rx.take(1),
-      Rx.timeout({ first: 60_000 })
+      Rx.timeout({ first: 12_000 })
     )
   );
   if (nightBalance(state) <= 0n) {

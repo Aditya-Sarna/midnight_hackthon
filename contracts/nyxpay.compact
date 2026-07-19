@@ -1,5 +1,5 @@
 /**
- * Circled Compact — enterprise circuits
+ * Circle Compact — enterprise circuits
  * KYC: HistoricMerkleTree + path membership
  * Spend/Credit: Field balance arithmetic under persistentCommit
  */
@@ -36,12 +36,14 @@ witness creditNewOpening(): Bytes<32>;
 /** Policy amount is a private witness — never a public circuit argument */
 witness policyAmount(): Field;
 
-/** Circled Credit v1 — same-asset overcollateralized lending */
+/** Circle Credit v1 — same-asset overcollateralized lending */
 export ledger loan_count: Counter;
 export ledger pool_deposit_count: Counter;
 export ledger repayment_count: Counter;
 export ledger credit_standing_count: Counter;
 export ledger pool_solvency_count: Counter;
+/** Private trading / receive strategy commitment transitions */
+export ledger strategy_commit_count: Counter;
 
 witness lockOldBalance(): Field;
 witness lockCollateralAmount(): Field;
@@ -68,6 +70,10 @@ witness standingOnTimeThreshold(): Field;
 witness standingMaxDefaults(): Field;
 witness standingThrOpening(): Bytes<32>;
 witness standingMaxDefOpening(): Bytes<32>;
+
+/** Private strategy weight (never a public circuit argument) */
+witness strategyWeight(): Field;
+witness strategyOpening(): Bytes<32>;
 
 export circuit publish_kyc_root(root: Bytes<32>): [] {
   assert(root != pad(32, ""), "empty KYC root");
@@ -463,4 +469,29 @@ export circuit prove_pool_solvency(
   ]);
   assert(bind != pad(32, ""), "solvency bind failed");
   pool_solvency_count.increment(1);
+}
+
+/**
+ * prove_strategy_commitment — proprietary strategy params stay private.
+ * Public: commitment + strategy_id bind. Private: weight + opening witnesses.
+ */
+export circuit prove_strategy_commitment(
+  strategy_commitment: Bytes<32>,
+  strategy_id: Bytes<32>
+): [] {
+  assert(strategy_commitment != pad(32, ""), "empty strategy commitment");
+  assert(strategy_id != pad(32, ""), "empty strategy id");
+  const w = strategyWeight();
+  const open = strategyOpening();
+  assert(
+    persistentCommit<Field>(w, open) == strategy_commitment,
+    "strategy commitment bind failed"
+  );
+  const bind = persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "circled:strategy:commit:"),
+    strategy_id,
+    strategy_commitment
+  ]);
+  assert(bind != pad(32, ""), "strategy bind failed");
+  strategy_commit_count.increment(1);
 }

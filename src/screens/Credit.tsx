@@ -4,11 +4,14 @@ import {
   creditPoolDeposit,
   creditRepay,
   creditStanding,
+  fetchBorrowDeals,
   fetchBorrowDisclosure,
   fetchCreditIdentity,
   fetchCreditLoans,
   fetchCreditStatus,
 } from "../lib/credit";
+import type { CreditDeal } from "../components/CreditPing";
+import { defaultCollateralForLoan } from "../lib/creditVoice";
 import { loadVault, type DeviceVaultState } from "../lib/deviceVault";
 import type { PublicUser } from "../lib/api";
 import {
@@ -27,7 +30,7 @@ type Props = {
 };
 
 /**
- * Circled Credit v1 — same-asset overcollateralized lending.
+ * Circle Credit v1 — same-asset overcollateralized lending.
  * Deliberately NOT marketed as undercollateralized.
  */
 export function CreditScreen({ user, onBack, onSystemsEvent, onLiveProofs }: Props) {
@@ -42,6 +45,8 @@ export function CreditScreen({ user, onBack, onSystemsEvent, onLiveProofs }: Pro
   const [collateralAmt, setCollateralAmt] = useState("1500");
   const [standing, setStanding] = useState<Record<string, unknown> | null>(null);
   const [disclosure, setDisclosure] = useState<Record<string, unknown> | null>(null);
+  const [deals, setDeals] = useState<CreditDeal[]>([]);
+  const [dealId, setDealId] = useState("standard");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -65,12 +70,29 @@ export function CreditScreen({ user, onBack, onSystemsEvent, onLiveProofs }: Pro
 
   useEffect(() => {
     const t = window.setTimeout(() => {
-      void fetchBorrowDisclosure({
+      void fetchBorrowDeals({
         loanAmount: Number(loanAmt) || 1000,
         collateralAmount: Number(collateralAmt) || 1500,
       })
-        .then((disc) => setDisclosure(disc.disclosure ?? null))
-        .catch(() => setDisclosure(null));
+        .then((res) => {
+          setDisclosure(res.disclosure ?? null);
+          const list = (res.deals ?? []) as CreditDeal[];
+          setDeals(list);
+          setDealId((prev) => {
+            const still = list.find((d) => d.id === prev);
+            return still?.id ?? list.find((d) => d.recommended)?.id ?? list[0]?.id ?? "standard";
+          });
+        })
+        .catch(() => {
+          setDisclosure(null);
+          setDeals([]);
+          void fetchBorrowDisclosure({
+            loanAmount: Number(loanAmt) || 1000,
+            collateralAmount: Number(collateralAmt) || 1500,
+          })
+            .then((disc) => setDisclosure(disc.disclosure ?? null))
+            .catch(() => undefined);
+        });
     }, 200);
     return () => window.clearTimeout(t);
   }, [loanAmt, collateralAmt]);
@@ -132,7 +154,7 @@ export function CreditScreen({ user, onBack, onSystemsEvent, onLiveProofs }: Pro
   return (
     <div className="credit atelier-panel">
       <header className="credit__head">
-        <p className="atelier-kicker">Circled Credit · v1</p>
+        <p className="atelier-kicker">Circle Credit · v1</p>
         <h1 className="brand-mark">Lend & borrow</h1>
         <p className="credit__lede">
           Same-asset, fully overcollateralized (≥150%). Pool-funded — no lender↔borrower link.
@@ -152,7 +174,7 @@ export function CreditScreen({ user, onBack, onSystemsEvent, onLiveProofs }: Pro
       <section className="credit__card">
         <h2>Your credit identity</h2>
         <p className="credit__hint">
-          Scoped exception to unlinkability — links only your loans, never payments or Circled-Auth.
+          Scoped exception to unlinkability — links only your loans, never payments or Circle-Auth.
         </p>
         <code className="credit__mono">{creditIdentity.slice(0, 48) || "—"}…</code>
         <p className="credit__balance">
@@ -216,41 +238,92 @@ export function CreditScreen({ user, onBack, onSystemsEvent, onLiveProofs }: Pro
       </section>
 
       <section className="credit__card">
-        <h2>Borrow (overcollateralized)</h2>
+        <h2>Your loan deals</h2>
         <div className="credit__row">
           <label className="credit__field">
             <span>Loan</span>
-            <input value={loanAmt} onChange={(e) => setLoanAmt(e.target.value)} type="number" />
-          </label>
-          <label className="credit__field">
-            <span>Collateral (≥150%)</span>
             <input
-              value={collateralAmt}
-              onChange={(e) => setCollateralAmt(e.target.value)}
+              value={loanAmt}
+              onChange={(e) => {
+                const v = e.target.value;
+                setLoanAmt(v);
+                const n = Math.floor(Number(v));
+                if (n > 0) setCollateralAmt(String(defaultCollateralForLoan(n)));
+              }}
               type="number"
             />
           </label>
+          <label className="credit__field">
+            <span>Collateral (locked at 150%)</span>
+            <input
+              value={collateralAmt}
+              readOnly
+              type="number"
+              title="Collateral is fixed at 150% of the loan"
+              aria-readonly="true"
+            />
+          </label>
         </div>
-        {disclosure && (
-          <p className="credit__hint">
-            APR {String(disclosure.aprPercent)} · est. interest {String(disclosure.estimatedInterest)} ·
-            collateral {String(disclosure.collateralRatioPercent)}
-          </p>
+        {deals.length > 0 && (
+          <div className="credit-ping__deal-list credit__deal-list" role="radiogroup" aria-label="Choose a loan deal">
+            {deals.map((deal) => {
+              const active = deal.id === dealId;
+              const disc = deal.disclosure;
+              return (
+                <button
+                  key={deal.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  className={`credit-ping__deal${active ? " is-active" : ""}`}
+                  onClick={() => setDealId(deal.id)}
+                >
+                  <span className="credit-ping__deal-top">
+                    <span className="credit-ping__deal-label">{deal.label}</span>
+                    {deal.recommended && (
+                      <span className="credit-ping__deal-badge">Popular</span>
+                    )}
+                  </span>
+                  <span className="credit-ping__deal-blurb">{deal.blurb}</span>
+                  <span className="credit-ping__deal-meta">
+                    {disc.termLabel ?? `${deal.installments} mo`} · APR {disc.aprPercent}
+                  </span>
+                  <span className="credit-ping__deal-meta">
+                    ~{disc.installmentAmount}/mo · interest ~{disc.estimatedInterest}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         )}
+        {(() => {
+          const selected = deals.find((d) => d.id === dealId);
+          const disc = selected?.disclosure ?? disclosure;
+          if (!disc) return null;
+          return (
+            <p className="credit__hint">
+              {selected ? `${selected.label} · ` : ""}
+              APR {String(disc.aprPercent)} · est. interest {String(disc.estimatedInterest)} ·
+              collateral {String(disc.collateralRatioPercent)}
+            </p>
+          );
+        })()}
         <button
           type="button"
           className="btn primary"
           disabled={busy || !vault}
           onClick={() =>
             void run(
-              "Loan originated",
+              "Loan booked",
               async () => {
                 if (!vault) return;
-                onSystemsEvent?.(makeSystemsEvent(narrativeForCreditAction("disclose")));
+                onSystemsEvent?.(makeSystemsEvent(narrativeForCreditAction("borrow")));
+                const selected = deals.find((d) => d.id === dealId);
+                const loan = Math.floor(Number(loanAmt));
                 const { vault: next } = await creditBorrow(vault, {
-                  loanAmount: Number(loanAmt),
-                  collateralAmount: Number(collateralAmt),
-                  installments: 4,
+                  loanAmount: loan,
+                  collateralAmount: defaultCollateralForLoan(loan),
+                  installments: selected?.installments ?? 4,
                 });
                 setVault(next);
               },
@@ -259,6 +332,9 @@ export function CreditScreen({ user, onBack, onSystemsEvent, onLiveProofs }: Pro
           }
         >
           Lock collateral & borrow
+          {deals.find((d) => d.id === dealId)
+            ? ` · ${deals.find((d) => d.id === dealId)!.label}`
+            : ""}
         </button>
       </section>
 

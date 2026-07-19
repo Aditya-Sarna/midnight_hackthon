@@ -8,8 +8,32 @@ import {
   type CurrencyCode,
 } from "../lib/currency";
 import { CurrencyPicker } from "../components/CurrencyPicker";
+import { fetchCreditLoans } from "../lib/credit";
+import {
+  approveRefundOnDevice,
+  markPaymentDisputed,
+  openPaymentDispute,
+} from "../lib/disputes";
+type View = "overview" | "expenses" | "insights" | "loans";
 
-type View = "overview" | "expenses" | "insights";
+type PublicLoan = {
+  id: string;
+  loanAmount: number;
+  collateralAmount: number;
+  remaining: number;
+  installmentAmount: number;
+  installmentsPaid: number;
+  installmentsTotal: number;
+  status: string;
+  dueNextAt: number;
+  createdAt: number;
+  aprBps?: number;
+  aprPercent?: string;
+  installmentPeriodDays?: number;
+  termDays?: number;
+  remainingTermDays?: number;
+  collateralRatioPercent?: string;
+};
 
 type Props = {
   vault: DeviceVaultState;
@@ -21,6 +45,7 @@ const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Balance" },
   { id: "expenses", label: "Expenses" },
   { id: "insights", label: "Chart" },
+  { id: "loans", label: "Loans" },
 ];
 
 const CARD_COLORS = ["#A8B59A", "#C4A27A", "#E8D9A0", "#E23D3D", "#4A4A4A", "#E8A06A", "#8FA8A3"];
@@ -57,12 +82,38 @@ export function SpendingInsights({ vault, onClose, onVaultChange }: Props) {
   const [totalCap, setTotalCap] = useState(String(vault.policy.params.T5?.cap ?? 50_000_000));
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState("");
+  const [loans, setLoans] = useState<PublicLoan[]>([]);
+  const [loansLoading, setLoansLoading] = useState(false);
+  const [loansError, setLoansError] = useState("");
 
   useEffect(() => {
     const onChange = (e: Event) => setCurrency((e as CustomEvent<CurrencyCode>).detail);
     window.addEventListener("circled:currency", onChange);
     return () => window.removeEventListener("circled:currency", onChange);
   }, []);
+
+  useEffect(() => {
+    if (view !== "loans") return;
+    let alive = true;
+    setLoansLoading(true);
+    setLoansError("");
+    void fetchCreditLoans(vault.userId)
+      .then((data) => {
+        if (!alive) return;
+        setLoans(Array.isArray(data?.loans) ? data.loans : []);
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setLoansError(e instanceof Error ? e.message : "Could not load loans");
+        setLoans([]);
+      })
+      .finally(() => {
+        if (alive) setLoansLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [view, vault.userId]);
 
   const history = vault.paymentHistory ?? [];
   const mask = `****${vault.keypair.pubkey.slice(-4)}`;
@@ -113,7 +164,13 @@ export function SpendingInsights({ vault, onClose, onVaultChange }: Props) {
   }
 
   const title =
-    view === "overview" ? "Budgeting and Spending Insights" : view === "expenses" ? "Expenses" : "Spending chart";
+    view === "overview"
+      ? "Budgeting and Spending Insights"
+      : view === "expenses"
+        ? "Expenses"
+        : view === "loans"
+          ? "Loan records"
+          : "Spending chart";
 
   return (
     <div className="insights" role="dialog" aria-label="Budgeting and Spending Insights">
@@ -201,7 +258,28 @@ export function SpendingInsights({ vault, onClose, onVaultChange }: Props) {
                 <p className="insights__empty">Payments you confirm appear in this stack.</p>
               )}
               {history.map((p, i) => (
-                <ExpenseCard key={p.id} payment={p} index={i} currency={currency} />
+                <ExpenseCard
+                  key={p.id}
+                  payment={p}
+                  index={i}
+                  currency={currency}
+                  onDispute={
+                    p.direction === "out" && p.status !== "refunded" && p.status !== "disputed"
+                      ? async () => {
+                          try {
+                            const d = await openPaymentDispute(vault.userId, p);
+                            const next = await markPaymentDisputed(vault, p.id, d.id);
+                            onVaultChange(next);
+                            // Pilot: auto-approve refund after open (no merchant network yet)
+                            const refunded = await approveRefundOnDevice(next, p, d.id);
+                            onVaultChange(refunded);
+                          } catch (e) {
+                            window.alert(e instanceof Error ? e.message : "Dispute failed");
+                          }
+                        }
+                      : undefined
+                  }
+                />
               ))}
             </div>
           )}
@@ -261,6 +339,26 @@ export function SpendingInsights({ vault, onClose, onVaultChange }: Props) {
               </button>
             </>
           )}
+
+          {view === "loans" && (
+            <div className="insights__loans">
+              {loansLoading && <p className="insights__empty">Loading loan records…</p>}
+              {loansError && <p className="insights__empty">{loansError}</p>}
+              {!loansLoading && !loansError && loans.length === 0 && (
+                <p className="insights__empty">
+                  No Circle Credit loans yet. Say “borrow 1000” from the home screen.
+                </p>
+              )}
+              {loans.map((loan) => (
+                <LoanCard
+                  key={loan.id}
+                  loan={loan}
+                  currency={currency}
+                  lockedOnDevice={vault.lockedCollateral?.[loan.id]}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         {savedMsg && <p className="insights__toast">{savedMsg}</p>}
@@ -313,23 +411,142 @@ function ExpenseCard({
   payment,
   index,
   currency,
+  onDispute,
 }: {
   payment: PaymentRecord;
   index: number;
   currency: CurrencyCode;
+  onDispute?: () => void;
 }) {
   const cat = categoryFor(payment);
   return (
     <article className="insights__card" style={{ background: colorFor(index, payment.recipient) }}>
       <span className="insights__card-icon">{initials(payment.recipient)}</span>
       <div>
-        <em>{cat}</em>
+        <em>
+          {cat}
+          {payment.status === "disputed"
+            ? " · disputed"
+            : payment.status === "refunded"
+              ? " · refunded"
+              : ""}
+        </em>
         <strong>{payment.recipient}</strong>
+        {onDispute && (
+          <button
+            type="button"
+            className="insights__dispute"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDispute();
+            }}
+          >
+            Dispute / refund
+          </button>
+        )}
       </div>
       <b>
         {payment.direction === "out" ? "-" : "+"}
         {formatMoney(payment.amount, currency)}
       </b>
+    </article>
+  );
+}
+
+function formatTerm(days: number | undefined): string {
+  if (days == null || !Number.isFinite(days)) return "—";
+  if (days < 14) return `${days} day${days === 1 ? "" : "s"}`;
+  const weeks = Math.round(days / 7);
+  if (weeks < 10) return `${weeks} week${weeks === 1 ? "" : "s"}`;
+  const months = Math.round(days / 30);
+  return `${months} month${months === 1 ? "" : "s"}`;
+}
+
+function LoanCard({
+  loan,
+  currency,
+  lockedOnDevice,
+}: {
+  loan: PublicLoan;
+  currency: CurrencyCode;
+  lockedOnDevice?: number;
+}) {
+  const due =
+    loan.dueNextAt > 0
+      ? new Date(loan.dueNextAt).toLocaleDateString([], {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })
+      : "—";
+  const opened = new Date(loan.createdAt).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  return (
+    <article className={`insights__loan insights__loan--${loan.status}`}>
+      <header className="insights__loan-head">
+        <div>
+          <em>{loan.status}</em>
+          <strong>{formatMoney(loan.loanAmount, currency)}</strong>
+        </div>
+        <span className="insights__loan-apr">{loan.aprPercent ?? "—"} APR</span>
+      </header>
+      <dl className="insights__loan-meta">
+        <div>
+          <dt>Remaining</dt>
+          <dd>{formatMoney(loan.remaining, currency)}</dd>
+        </div>
+        <div>
+          <dt>Installment</dt>
+          <dd>{formatMoney(loan.installmentAmount, currency)}</dd>
+        </div>
+        <div>
+          <dt>Progress</dt>
+          <dd>
+            {loan.installmentsPaid}/{loan.installmentsTotal}
+          </dd>
+        </div>
+        <div>
+          <dt>Term</dt>
+          <dd>{formatTerm(loan.termDays)}</dd>
+        </div>
+        <div>
+          <dt>Left on term</dt>
+          <dd>{formatTerm(loan.remainingTermDays)}</dd>
+        </div>
+        <div>
+          <dt>Period</dt>
+          <dd>
+            every {loan.installmentPeriodDays ?? "—"} day
+            {(loan.installmentPeriodDays ?? 0) === 1 ? "" : "s"}
+          </dd>
+        </div>
+        <div>
+          <dt>Collateral</dt>
+          <dd>
+            {formatMoney(loan.collateralAmount, currency)}
+            {loan.collateralRatioPercent ? ` · ${loan.collateralRatioPercent}` : ""}
+          </dd>
+        </div>
+        <div>
+          <dt>Next due</dt>
+          <dd>{due}</dd>
+        </div>
+        <div>
+          <dt>Opened</dt>
+          <dd>{opened}</dd>
+        </div>
+        {lockedOnDevice != null && lockedOnDevice > 0 ? (
+          <div>
+            <dt>Locked on device</dt>
+            <dd>{formatMoney(lockedOnDevice, currency)}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <p className="insights__loan-id">#{loan.id.slice(0, 10)}…</p>
     </article>
   );
 }

@@ -115,7 +115,7 @@ export function classifyRecipient(store: Store, recipient: string): BrandLookupR
       merchant_identifier: brand.domain,
       payment_address: null,
       status: "unverified_brand",
-      message: `${brand.name} is not a verified merchant on Circled. This is not a verified payment.`,
+      message: `${brand.name} is not a verified merchant on Circle. This is not a verified payment.`,
     };
   }
 

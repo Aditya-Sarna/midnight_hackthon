@@ -43,7 +43,7 @@ describe("GET /api/health + public surfaces", () => {
     // Ledger surface is public events only — no Class 0 secret fields as keys
     expect(JSON.stringify(ledger)).not.toMatch(/"privateKey"|"balanceNonce"/);
     expect(nyxproof).toMatchObject({
-      title: expect.stringMatching(/CircledProof/i),
+      title: expect.stringMatching(/CircleProof/i),
       circuit: "prove_session_auth",
     });
   });

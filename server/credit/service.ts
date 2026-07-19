@@ -1,5 +1,5 @@
 /**
- * Circled Credit v1 service — pool-funded, same-asset overcollateralized loans.
+ * Circle Credit v1 service — pool-funded, same-asset overcollateralized loans.
  * Compact circuits for lock / pool deposit / repay / standing when artifacts present.
  */
 import { randomNonce, sha256 } from "../services/crypto.js";
@@ -53,7 +53,7 @@ export function creditSkillDocument() {
     model: "v1 same-asset overcollateralized — NOT undercollateralized / NOT zero-collateral",
     sybil: "credit_identity = hash(kyc_leaf, credit-scope-salt) — scoped linkability only inside lending",
     unlinkability_exception:
-      "credit_identity is never shared with payments or Circled-Auth relying parties",
+      "credit_identity is never shared with payments or Circle-Auth relying parties",
     circuits: [
       "prove_collateral_lock",
       "prove_pool_deposit",
@@ -105,6 +105,33 @@ export function getCreditStatus(store: Store) {
   };
 }
 
+const BORROW_DEAL_CATALOG = [
+  {
+    id: "quick",
+    label: "Quick",
+    blurb: "Pay it back soon · lowest interest",
+    installments: 2,
+  },
+  {
+    id: "standard",
+    label: "Standard",
+    blurb: "Balanced term · most common",
+    installments: 4,
+  },
+  {
+    id: "flex",
+    label: "Flex",
+    blurb: "Smaller installments · longer haul",
+    installments: 6,
+  },
+  {
+    id: "stretch",
+    label: "Stretch",
+    blurb: "Lowest monthly · more total interest",
+    installments: 8,
+  },
+] as const;
+
 /** Prefetch APR / collateral disclosure for voice + UI (no loan created) */
 export function previewBorrowDisclosure(input: {
   loanAmount: number;
@@ -123,12 +150,46 @@ export function previewBorrowDisclosure(input: {
   return { ok: true as const, disclosure, compliance: cfg };
 }
 
+/** Multiple term packages after someone asks to borrow — pick a deal before Accept */
+export function previewBorrowDeals(input: {
+  loanAmount: number;
+  collateralAmount: number;
+}) {
+  const cfg = creditComplianceConfig();
+  const loanAmount = Math.floor(Number(input.loanAmount));
+  const collateralAmount = Math.floor(Number(input.collateralAmount));
+  const deals = BORROW_DEAL_CATALOG.map((deal) => {
+    const disclosure = borrowerRateDisclosure({
+      loanAmount,
+      installments: deal.installments,
+      aprBps: cfg.disclosedAprBps,
+      collateralAmount,
+      collateralRatioBps: 15_000,
+    });
+    return {
+      id: deal.id,
+      label: deal.label,
+      blurb: deal.blurb,
+      installments: deal.installments,
+      recommended: deal.id === "standard",
+      disclosure,
+    };
+  });
+  const defaultDeal = deals.find((d) => d.recommended) ?? deals[1] ?? deals[0];
+  return {
+    ok: true as const,
+    deals,
+    disclosure: defaultDeal?.disclosure,
+    compliance: cfg,
+  };
+}
+
 export function issueCreditIdentity(user: PublicAccount) {
   const creditIdentity = deriveCreditIdentity(user.credentialCommitment);
   return {
     ok: true as const,
     creditIdentity,
-    note: "Scoped to Circled Credit only — never send to payment counterparties or Circled-Auth RPs",
+    note: "Scoped to Circle Credit only — never send to payment counterparties or Circle-Auth RPs",
   };
 }
 
@@ -390,7 +451,7 @@ export async function borrowFromPool(
   saveStore(store);
   return {
     ok: true as const,
-    loan: publicLoan(loan),
+    loan: publicLoan(store, loan),
     creditIdentity,
     poolCommitment: s.poolCommitment,
     compactProved: Boolean(compact),
@@ -514,7 +575,7 @@ export async function repayLoan(
   saveStore(store);
   return {
     ok: true as const,
-    loan: publicLoan(loan),
+    loan: publicLoan(store, loan),
     installmentNullifier,
     onTime,
     compactProved: Boolean(compact),
@@ -621,7 +682,7 @@ export function liquidateIfDue(store: Store, loanId: string) {
     return {
       ok: true as const,
       liquidated: true,
-      loan: publicLoan(loan),
+      loan: publicLoan(store, loan),
       note: "Collateral claimed by pool — default recorded against credit_identity",
     };
   }
@@ -631,12 +692,17 @@ export function liquidateIfDue(store: Store, loanId: string) {
     ok: true as const,
     liquidated: false,
     missedInstallments: loan.missedInstallments,
-    loan: publicLoan(loan),
+    loan: publicLoan(store, loan),
     note: "Miss recorded — still within grace period",
   };
 }
 
-function publicLoan(loan: LoanRecord) {
+function publicLoan(store: Store, loan: LoanRecord) {
+  const s = creditState(store);
+  const periodMs = s.config.installmentPeriodMs;
+  const aprBps = creditComplianceConfig().disclosedAprBps;
+  const remainingInstallments = Math.max(0, loan.installmentsTotal - loan.installmentsPaid);
+  const day = 86_400_000;
   return {
     id: loan.id,
     creditIdentity: loan.creditIdentity,
@@ -651,11 +717,20 @@ function publicLoan(loan: LoanRecord) {
     loanCommitment: loan.loanCommitment,
     dueNextAt: loan.dueNextAt,
     createdAt: loan.createdAt,
+    /** Disclosed APR (bps) — TILA-style; Class 1 public to borrower */
+    aprBps,
+    aprPercent: `${(aprBps / 100).toFixed(2)}%`,
+    installmentPeriodDays: Math.max(1, Math.round(periodMs / day)),
+    termDays: Math.max(1, Math.round((loan.installmentsTotal * periodMs) / day)),
+    remainingTermDays: Math.round((remainingInstallments * periodMs) / day),
+    collateralRatioPercent: `${(loan.collateralRatioBps / 100).toFixed(0)}%`,
     // Never expose installmentNullifiers list or raw default detail here
   };
 }
 
 export function listBorrowerLoans(store: Store, userId: string) {
   const s = creditState(store);
-  return s.loans.filter((l) => l.borrowerUserId === userId).map(publicLoan);
+  return s.loans
+    .filter((l) => l.borrowerUserId === userId)
+    .map((l) => publicLoan(store, l));
 }

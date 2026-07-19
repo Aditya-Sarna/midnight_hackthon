@@ -1,5 +1,5 @@
 /**
- * Fund Preprod wallet + register DUST (lands a real txId), then deploy Circled if sync allows.
+ * Fund Preprod wallet + register DUST (lands a real txId), then deploy Circle if sync allows.
  *
  *   npm run proof-server:up
  *   npm run midnight:deploy
@@ -155,7 +155,7 @@ async function createProviders(walletCtx: Awaited<ReturnType<typeof buildWallet>
 }
 
 async function main() {
-  console.log("\n═══ Circled Preprod: fund → DUST tx → deploy ═══\n");
+  console.log("\n═══ Circle Preprod: fund → DUST tx → deploy ═══\n");
 
   const ps = await fetch(`${CONFIG.proofServer}/health`).then((r) => r.ok).catch(() => false);
   if (!ps) throw new Error(`Proof server offline at ${CONFIG.proofServer}`);

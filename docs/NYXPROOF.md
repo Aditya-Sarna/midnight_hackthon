@@ -1,10 +1,10 @@
-# CircledProof — A Midnight-Based Replacement for OTP
+# CircleProof — A Midnight-Based Replacement for OTP
 
 Instead of sending a secret code and asking the user to type it back, the device
 proves — locally, per request — that it holds a valid KYC credential, without
 producing anything that can be intercepted, replayed, or phished.
 
-Reuses Circled’s existing `kyc_registry_root` + `prove_kyc_membership`. Adds
+Reuses Circle’s existing `kyc_registry_root` + `prove_kyc_membership`. Adds
 `prove_session_auth` in `contracts/nyxpay.compact`.
 
 ## Protocol
@@ -37,4 +37,4 @@ Anti-phishing is not novel (WebAuthn already does that). Headline claims:
 ## Regulatory
 
 Validate as “something you have” against jurisdiction-specific 2FA language before
-treating as OTP-equivalent — same open-item category as Circled compliance gaps.
+treating as OTP-equivalent — same open-item category as Circle compliance gaps.

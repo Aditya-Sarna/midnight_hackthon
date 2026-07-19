@@ -1,5 +1,7 @@
 import type { Store } from "../../services/store.js";
 import { COMPLIANCE_GAPS, REGULATORY_MAPPING } from "../posture.js";
+import { retentionDocument } from "./retention.js";
+import { reconciliationSummary } from "../../services/reconciliation.js";
 
 /**
  * Audit & Reporting Service (§1 / §4)
@@ -47,10 +49,28 @@ export class AuditReportingService {
       structuralGuarantee:
         "Report contains no amounts, parties, balances, or policy parameters — service never has access to them.",
       sarStrPosture: COMPLIANCE_GAPS.find((g) => g.id === "sar-str"),
+      retentionAndSar: retentionDocument(),
+      paymentLifecycle: reconciliationSummary(this.store),
+      kycAuditCount: (this.store.kycAudit ?? []).length,
       regulatoryNotes: {
         recordkeeping: REGULATORY_MAPPING.recordkeeping,
         revocationEnforcement: REGULATORY_MAPPING.revocationEnforcement,
       },
+    };
+  }
+
+  /** Machine-exportable audit bundle (privacy-safe aggregates only) */
+  exportOpsBundle() {
+    const report = this.generatePublicReport();
+    return {
+      exportedAt: Date.now(),
+      report,
+      kycAudit: (this.store.kycAudit ?? []).slice(0, 100).map((e) => ({
+        id: e.id,
+        at: e.at,
+        action: e.action,
+        detail: e.detail.slice(0, 120),
+      })),
     };
   }
 }

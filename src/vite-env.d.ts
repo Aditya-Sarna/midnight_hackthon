@@ -51,6 +51,8 @@ interface Window {
 
 interface ImportMetaEnv {
   readonly VITE_API_URL?: string;
+  /** When "1", refuse pay-to-unknown (must enroll contact first). */
+  readonly VITE_STRICT_CONTACTS?: string;
   readonly PROD: boolean;
   readonly DEV: boolean;
 }

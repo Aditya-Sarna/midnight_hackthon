@@ -1,24 +1,29 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Glyph, GlyphMark } from "../components/Glyph";
 import { saveSession, type PublicUser } from "../lib/api";
-import { bootstrapProductionDemo } from "../lib/bootstrap";
+import { bootstrapProductAccount, bootstrapProductionDemo } from "../lib/bootstrap";
+import { isDemoMode } from "../lib/productMode";
 import { makeSystemsEvent, type SystemsEvent } from "../lib/systemsBus";
 
 type Props = {
   onComplete: (user: PublicUser) => void;
-  onShowZkDemo: (user: PublicUser) => void;
+  onShowZkDemo?: (user: PublicUser) => void;
   onSystemsEvent?: (e: SystemsEvent) => void;
 };
 
 /**
- * Manual onboarding collapses to the same Class 0 device-vault path as the
- * production demo — government ID is hashed on-device before register.
+ * Product onboarding: government ID hashed on-device → register → wallet.
+ * Showcase/demo path still seeds contacts when demo mode is on.
  */
-export function Onboarding({ onComplete: _onComplete, onShowZkDemo, onSystemsEvent }: Props) {
+export function Onboarding({ onComplete, onShowZkDemo, onSystemsEvent }: Props) {
   const [step, setStep] = useState<"welcome" | "govt-kyc" | "done">("welcome");
+  const [displayName, setDisplayName] = useState("");
   const [aadhaar, setAadhaar] = useState("");
+  const [recoveryPass, setRecoveryPass] = useState("");
+  const [recoveryPass2, setRecoveryPass2] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const demo = isDemoMode();
 
   useEffect(() => {
     if (step === "welcome") {
@@ -56,13 +61,27 @@ export function Onboarding({ onComplete: _onComplete, onShowZkDemo, onSystemsEve
       setError("Enter your government ID reference");
       return;
     }
+    if (!demo && !displayName.trim()) {
+      setError("Enter the name you want on Circle");
+      return;
+    }
+    if (!demo) {
+      if (recoveryPass.trim().length < 8) {
+        setError("Recovery passphrase must be at least 8 characters");
+        return;
+      }
+      if (recoveryPass !== recoveryPass2) {
+        setError("Recovery passphrases do not match");
+        return;
+      }
+    }
     setBusy(true);
     onSystemsEvent?.(
       makeSystemsEvent({
         source: "onboarding",
         phase: "issuing",
         title: "Issuing ZK-KYC + vault",
-        detail: "Compact publish_kyc_leaf · credential commitment · AES-GCM vault wrap.",
+        detail: "Compact publish_kyc_leaf · credential commitment · recovery kit seal.",
         layer: "kyc",
         status: "proving",
         intensity: 0.95,
@@ -70,22 +89,44 @@ export function Onboarding({ onComplete: _onComplete, onShowZkDemo, onSystemsEve
       })
     );
     try {
-      // Document reference is hashed inside bootstrap/register — never stored raw
-      const result = await bootstrapProductionDemo({ documentRef: aadhaar.trim() });
-      saveSession(result.user.id);
+      if (demo) {
+        const result = await bootstrapProductionDemo({ documentRef: aadhaar.trim() });
+        saveSession(result.user.id);
+        setStep("done");
+        onSystemsEvent?.(
+          makeSystemsEvent({
+            source: "onboarding",
+            phase: "done",
+            title: "KYC leaf on Midnight",
+            detail: "Showcase vault ready — opening circuit walkthrough.",
+            layer: "midnight",
+            status: "settled",
+            intensity: 0.5,
+          })
+        );
+        if (onShowZkDemo) onShowZkDemo(result.user);
+        else onComplete(result.user);
+        return;
+      }
+
+      const result = await bootstrapProductAccount({
+        displayName: displayName.trim(),
+        documentRef: aadhaar.trim(),
+        recoveryPassphrase: recoveryPass,
+      });
       setStep("done");
       onSystemsEvent?.(
         makeSystemsEvent({
           source: "onboarding",
           phase: "done",
-          title: "KYC leaf on Midnight",
-          detail: "Registry root updated. Class 0 vault ready. Moving to circuit triptych.",
+          title: "Account ready",
+          detail: "KYC leaf published. Recovery kit downloaded — keep your passphrase safe.",
           layer: "midnight",
           status: "settled",
           intensity: 0.5,
         })
       );
-      onShowZkDemo(result.user);
+      onComplete(result.user);
     } catch (err) {
       setError(err instanceof Error ? err.message : "KYC + vault provisioning failed");
       onSystemsEvent?.(
@@ -109,12 +150,13 @@ export function Onboarding({ onComplete: _onComplete, onShowZkDemo, onSystemsEve
       {step === "welcome" && (
         <div className="stack center fade-in">
           <Glyph size={120} pulse />
-          <h1 className="brand">Circled</h1>
+          <h1 className="brand">Circle</h1>
           <p className="tagline">
-            Class 0 secrets stay on this device. The server only ever receives commitments.
+            Create your private wallet. Balances and amounts stay on this device — Midnight only
+            verifies proofs.
           </p>
           <button className="btn primary" type="button" onClick={() => setStep("govt-kyc")}>
-            Start with government KYC
+            Continue
           </button>
         </div>
       )}
@@ -124,11 +166,53 @@ export function Onboarding({ onComplete: _onComplete, onShowZkDemo, onSystemsEve
           <header className="screen-head">
             <GlyphMark />
             <div>
-              <h2>Government KYC</h2>
+              <h2>Verify & create vault</h2>
               <p>ID reference is hashed on-device — raw document never transmitted.</p>
             </div>
           </header>
           <div className="govt-badge">Authorized identity provider</div>
+          {!demo && (
+            <>
+              <label>
+                Display name
+                <input
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="How you appear in Circle"
+                  autoComplete="name"
+                  required
+                />
+              </label>
+              <label>
+                Recovery passphrase
+                <input
+                  type="password"
+                  value={recoveryPass}
+                  onChange={(e) => setRecoveryPass(e.target.value)}
+                  placeholder="Min 8 characters — keep this safe"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                />
+              </label>
+              <label>
+                Confirm passphrase
+                <input
+                  type="password"
+                  value={recoveryPass2}
+                  onChange={(e) => setRecoveryPass2(e.target.value)}
+                  placeholder="Repeat passphrase"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                />
+              </label>
+              <p className="muted" style={{ fontSize: "0.82rem" }}>
+                We download a recovery kit file. With that file + this passphrase you can restore
+                Circle on a new device. This is not a BIP39 seed phrase.
+              </p>
+            </>
+          )}
           <label>
             Government ID reference
             <input
@@ -140,7 +224,7 @@ export function Onboarding({ onComplete: _onComplete, onShowZkDemo, onSystemsEve
           </label>
           {error && <p className="error">{error}</p>}
           <button className="btn primary" type="submit" disabled={busy}>
-            {busy ? "Issuing commitment…" : "Verify & create device vault"}
+            {busy ? "Creating vault…" : "Verify & open wallet"}
           </button>
         </form>
       )}

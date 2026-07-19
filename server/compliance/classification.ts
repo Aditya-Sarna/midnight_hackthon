@@ -1,5 +1,5 @@
 /**
- * Circled data classification (§3 Backend Compliance Document)
+ * Circle data classification (§3 Backend Compliance Document)
  * Design invariant: no service holds both identifying Class 0/2 content
  * AND durable knowledge of what a user did.
  */

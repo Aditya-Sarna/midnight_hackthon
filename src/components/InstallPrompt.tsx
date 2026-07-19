@@ -24,9 +24,9 @@ export function InstallPrompt() {
   if (!deferred || hidden) return null;
 
   return (
-    <div className="install-prompt" role="region" aria-label="Install Circled">
+    <div className="install-prompt" role="region" aria-label="Install Circle">
       <p>
-        <strong className="brand-mark">Circled</strong>
+        <strong className="brand-mark">Circle</strong>
         <span>Install for offline shell + home-screen launch</span>
       </p>
       <div className="install-prompt__actions">

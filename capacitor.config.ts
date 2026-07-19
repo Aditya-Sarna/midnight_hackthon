@@ -7,7 +7,7 @@
  */
 const config = {
   appId: "com.circled.payments",
-  appName: "Circled",
+  appName: "Circle",
   webDir: "dist",
   server: {
     androidScheme: "https",

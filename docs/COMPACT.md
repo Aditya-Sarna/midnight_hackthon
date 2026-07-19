@@ -1,4 +1,4 @@
-# Compact prove + settle (Circled)
+# Compact prove + settle (Circle)
 
 ## What's live now
 
@@ -6,7 +6,7 @@
 |-------|--------|
 | `contracts/nyxpay.compact` | Source (pragma 0.23) |
 | `compactc` 0.31.1 artifacts | `contracts/managed/nyxpay/` — keys, zkir, contract JS |
-| Compact runtime settle | Every payment / CircledProof advances real Compact ledger counters |
+| Compact runtime settle | Every payment / CircleProof advances real Compact ledger counters |
 | Proof-server `/prove` | When Docker proof-server is up → mode `midnight-proof-server` |
 | Preprod broadcast | Needs `MIDNIGHT_WALLET_SEED` + `MIDNIGHT_CONTRACT_ADDRESS` + funded faucet |
 

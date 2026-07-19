@@ -57,7 +57,7 @@ function makeUser(store: Store, name: string, doc: string, balance: number) {
   return { user, opening: open, balance };
 }
 
-describe("Circled Credit v1", () => {
+describe("Circle Credit v1", () => {
   let store: Store;
 
   beforeEach(() => {

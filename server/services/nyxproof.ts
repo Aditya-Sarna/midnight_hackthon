@@ -1,5 +1,5 @@
 /**
- * CircledProof — Midnight-based OTP replacement
+ * CircleProof — Midnight-based OTP replacement
  * Challenge-response proof-of-possession over existing KYC Merkle membership.
  * No transmittable secret; nonce burned on first verify.
  */
@@ -9,7 +9,7 @@ import { saveStore } from "./store.js";
 
 export const NYXPROOF_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 
-export type CircledProofChallenge = {
+export type CircleProofChallenge = {
   nonce: string;
   relyingPartyId: string;
   timeWindow: string;
@@ -48,7 +48,7 @@ export function issueChallenge(
     expectedUserId?: string;
     windowMs?: number;
   }
-): CircledProofChallenge {
+): CircleProofChallenge {
   const windowMs = input.windowMs ?? NYXPROOF_WINDOW_MS;
   const nonce = randomNonce(24);
   const issuedAt = Date.now();
@@ -60,7 +60,7 @@ export function issueChallenge(
   if (!store.nyxproofChallenges) store.nyxproofChallenges = {};
   if (!store.spentChallenges) store.spentChallenges = [];
 
-  const record: CircledProofChallenge = {
+  const record: CircleProofChallenge = {
     nonce,
     relyingPartyId,
     timeWindow,
@@ -164,7 +164,7 @@ export function verifyAndBurn(
     delayedUntil: Date.now(),
     released: true,
     meta: {
-      note: "CircledProof session auth — challenge burned; no OTP transmitted",
+      note: "CircleProof session auth — challenge burned; no OTP transmitted",
       nyxproof: true,
       unlinkable: pending.unlinkable,
       relyingPartyHint: pending.relyingPartyId.slice(0, 24),
@@ -236,7 +236,7 @@ export function verifyPaymentSessionAuth(
     delayedUntil: Date.now(),
     released: true,
     meta: {
-      note: "CircledProof confirm-tap — payment intent bound; no OTP",
+      note: "CircleProof confirm-tap — payment intent bound; no OTP",
       nyxproof: true,
       mode: "payment",
     },
@@ -247,7 +247,7 @@ export function verifyPaymentSessionAuth(
 
 export function nyxproofDocument() {
   return {
-    title: "CircledProof — A Midnight-Based Replacement for OTP",
+    title: "CircleProof — A Midnight-Based Replacement for OTP",
     version: "1.0.0",
     oneLiner:
       "Device proves locally that it holds a valid KYC credential for this challenge, party, and window — nothing interceptable, replayable, or phishable.",

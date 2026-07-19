@@ -39,6 +39,8 @@ export type Witnesses<PS> = {
   standingMaxDefaults(context: __compactRuntime.WitnessContext<Ledger, PS>): [PS, bigint];
   standingThrOpening(context: __compactRuntime.WitnessContext<Ledger, PS>): [PS, Uint8Array];
   standingMaxDefOpening(context: __compactRuntime.WitnessContext<Ledger, PS>): [PS, Uint8Array];
+  strategyWeight(context: __compactRuntime.WitnessContext<Ledger, PS>): [PS, bigint];
+  strategyOpening(context: __compactRuntime.WitnessContext<Ledger, PS>): [PS, Uint8Array];
 }
 
 export type ImpureCircuits<PS> = {
@@ -100,6 +102,9 @@ export type ImpureCircuits<PS> = {
   prove_pool_solvency(context: __compactRuntime.CircuitContext<PS>,
                       pool_commitment_0: Uint8Array,
                       coverage_ok_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  prove_strategy_commitment(context: __compactRuntime.CircuitContext<PS>,
+                            strategy_commitment_0: Uint8Array,
+                            strategy_id_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type ProvableCircuits<PS> = {
@@ -161,6 +166,9 @@ export type ProvableCircuits<PS> = {
   prove_pool_solvency(context: __compactRuntime.CircuitContext<PS>,
                       pool_commitment_0: Uint8Array,
                       coverage_ok_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  prove_strategy_commitment(context: __compactRuntime.CircuitContext<PS>,
+                            strategy_commitment_0: Uint8Array,
+                            strategy_id_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type PureCircuits = {
@@ -229,6 +237,9 @@ export type Circuits<PS> = {
   prove_pool_solvency(context: __compactRuntime.CircuitContext<PS>,
                       pool_commitment_0: Uint8Array,
                       coverage_ok_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  prove_strategy_commitment(context: __compactRuntime.CircuitContext<PS>,
+                            strategy_commitment_0: Uint8Array,
+                            strategy_id_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type Ledger = {
@@ -254,6 +265,7 @@ export type Ledger = {
   readonly repayment_count: bigint;
   readonly credit_standing_count: bigint;
   readonly pool_solvency_count: bigint;
+  readonly strategy_commit_count: bigint;
 }
 
 export type ContractReferenceLocations = any;

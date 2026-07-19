@@ -508,6 +508,32 @@
         "types": [
         ]
       }
+    },
+    {
+      "name": "prove_strategy_commitment",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "strategy_commitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "strategy_id",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
     }
   ],
   "witnesses": [
@@ -832,6 +858,23 @@
         "type-name": "Bytes",
         "length": 32
       }
+    },
+    {
+      "name": "strategyWeight",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "strategyOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
     }
   ],
   "contracts": [
@@ -927,6 +970,12 @@
     {
       "name": "pool_solvency_count",
       "index": 13,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "strategy_commit_count",
+      "index": 14,
       "exported": true,
       "storage": "Counter"
     }

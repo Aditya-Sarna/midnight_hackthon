@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import "./test/mocks.js";
 import { registerDeviceUser, useServerHarness } from "./test/harness.js";
 
-describe("CircledProof challenge / verify (OTP replacement)", () => {
+describe("CircleProof challenge / verify (OTP replacement)", () => {
   const harness = useServerHarness();
 
   it("issues a public challenge and burns it on successful verify (single-use)", async () => {

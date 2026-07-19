@@ -28,7 +28,32 @@ import {
   randomOpening,
   openingToHex,
 } from "./compactCommit.js";
-import { proveCircuitBatch } from "./zkProve.js";
+import { proveCircuit, warmProverKeys } from "./zkProve.js";
+import type { ProofData } from "@midnight-ntwrk/compact-runtime";
+
+export { warmProverKeys };
+
+/** Compact execute then immediately SNARK — overlaps with sibling pipelines. */
+async function compactThenSnark(
+  circuit: string,
+  run: () => Promise<CompactRunResult>,
+  attemptZk: boolean
+): Promise<{
+  compact: CompactRunResult;
+  snarkOk?: boolean;
+  digest?: string;
+  snarkError?: string;
+}> {
+  const compact = await run();
+  if (!attemptZk || !compact.proofData) {
+    return { compact };
+  }
+  const snark = await proveCircuit(circuit, compact.proofData as ProofData);
+  if (!snark.ok) {
+    return { compact, snarkOk: false, snarkError: snark.reason };
+  }
+  return { compact, snarkOk: true, digest: snark.proofDigest };
+}
 
 export type ProofMode = "midnight-proof-server" | "compact-runtime" | "compact-sim";
 
@@ -193,23 +218,8 @@ export async function attestAndExecutePayment(input: SettleProofInput): Promise<
     const kyc = await syncKycRoot(input.kycRoot, input.leaf);
     proveTimings.kyc = Date.now() - t0;
 
-    const t1 = Date.now();
-    const recipient = await runCompactCircuit("prove_recipient_valid", [
-      input.leaf,
-      input.kycRoot,
-      input.contactCommitment,
-    ]);
-    proveTimings.recipient = Date.now() - t1;
-
     // Amount is private witness — not a public circuit argument
     const amount = input.balanceWitness?.amount ?? input.amountHint;
-    const t2 = Date.now();
-    const policy = await runPolicyUpdate(
-      input.oldPolicyCommitment,
-      input.newPolicyCommitment,
-      BigInt(amount)
-    );
-    proveTimings.policy = Date.now() - t2;
 
     // Enterprise balance arithmetic witnesses (persistentCommit)
     const oldBal = BigInt(input.balanceWitness?.oldBalance ?? 100_000);
@@ -237,60 +247,101 @@ export async function attestAndExecutePayment(input: SettleProofInput): Promise<
     const spendNewCommit = compactBalanceCommit(oldBal - BigInt(amount), newOpen);
     void openingToHex;
 
-    const t3 = Date.now();
-    const spend = await runCompactCircuit("prove_spend_update", [
-      spendOldCommit,
-      spendNewCommit,
-      input.recipientProofDigest,
-    ]);
-    proveTimings.spend = Date.now() - t3;
+    // Full Midnight path: Compact → SNARK per circuit, all pipelines in parallel
+    // Wall-clock ≈ slowest (compact+snark), not sum of every circuit.
+    const attemptZk =
+      status.proofServerOk && status.artifactsOk && status.proverKeysLoaded.length >= 2;
+    const hasPolicyKey = status.proverKeysLoaded.includes("prove_policy_update");
+
+    if (attemptZk) {
+      void warmProverKeys([
+        "prove_recipient_valid",
+        "prove_spend_update",
+        ...(hasPolicyKey ? ["prove_policy_update"] : []),
+      ]);
+    }
+
+    const tPipe = Date.now();
+    const pipelines = [
+      compactThenSnark(
+        "prove_recipient_valid",
+        () =>
+          runCompactCircuit("prove_recipient_valid", [
+            input.leaf,
+            input.kycRoot,
+            input.contactCommitment,
+          ]),
+        attemptZk
+      ),
+      compactThenSnark(
+        "prove_policy_update",
+        () =>
+          runPolicyUpdate(
+            input.oldPolicyCommitment,
+            input.newPolicyCommitment,
+            BigInt(amount)
+          ),
+        attemptZk && hasPolicyKey
+      ),
+      compactThenSnark(
+        "prove_spend_update",
+        () =>
+          runCompactCircuit("prove_spend_update", [
+            spendOldCommit,
+            spendNewCommit,
+            input.recipientProofDigest,
+          ]),
+        attemptZk
+      ),
+    ] as const;
+
+    const [recipientPipe, policyPipe, spendPipe] = await Promise.all(pipelines);
+    proveTimings.recipient = Date.now() - tPipe;
+    proveTimings.policy = proveTimings.recipient;
+    proveTimings.spend = proveTimings.recipient;
+    proveTimings.zkSnark = Date.now() - tPipe;
+
+    const recipient = recipientPipe.compact;
+    const policy = policyPipe.compact;
+    const spend = spendPipe.compact;
 
     let proved = false;
     let snarkDigests: Record<string, string> | undefined;
     let zkProveError: string | undefined;
     let grade: AttestationGrade = "compact-runtime";
 
-    const hasPolicyKey = status.proverKeysLoaded.includes("prove_policy_update");
-    const attemptZk =
-      status.proofServerOk && status.artifactsOk && status.proverKeysLoaded.length >= 2;
     if (attemptZk) {
-      const tZk = Date.now();
-      const circuits: { circuit: string; proofData: typeof recipient.proofData }[] = [
-        { circuit: "prove_recipient_valid", proofData: recipient.proofData },
-        { circuit: "prove_spend_update", proofData: spend.proofData },
+      snarkDigests = {};
+      const pipes = [
+        { id: "prove_recipient_valid", p: recipientPipe, required: true },
+        { id: "prove_policy_update", p: policyPipe, required: hasPolicyKey },
+        { id: "prove_spend_update", p: spendPipe, required: true },
       ];
-      // Full privacy claim: amount-private policy SNARK when keys exist
-      if (hasPolicyKey && policy.proofData) {
-        circuits.splice(1, 0, {
-          circuit: "prove_policy_update",
-          proofData: policy.proofData,
-        });
+      for (const { id, p, required } of pipes) {
+        if (!required) continue;
+        if (p.snarkOk && p.digest) {
+          snarkDigests[id] = p.digest;
+        } else if (p.snarkError) {
+          zkProveError = `${id}: ${p.snarkError}`;
+        }
       }
-      const batch = await proveCircuitBatch(circuits);
-      proveTimings.zkSnark = Date.now() - tZk;
-      if (batch.ok) {
-        const policySnarked = !hasPolicyKey || Boolean(batch.digests?.prove_policy_update);
-        proved = policySnarked;
-        snarkDigests = batch.digests;
-        // Only call zk-proved when recipient+spend (+policy if keyed) all returned SNARKs
-        grade = policySnarked ? "zk-proved" : "compact-runtime";
-        if (hasPolicyKey && !batch.digests?.prove_policy_update) {
-          zkProveError = "policy SNARK missing from batch";
-        }
-      } else {
-        zkProveError = batch.reason;
-        if (cfg.requireZkProve) {
-          return {
-            ok: false,
-            mode: status.mode,
-            grade: "rejected",
-            reason: `ZK prove required — ${batch.reason}`,
-            compact: { kyc, recipient, policy, spend },
-            proved: false,
-            zkProveError,
-            proveTimings,
-          };
-        }
+      const policySnarked = !hasPolicyKey || Boolean(snarkDigests.prove_policy_update);
+      proved =
+        Boolean(snarkDigests.prove_recipient_valid) &&
+        Boolean(snarkDigests.prove_spend_update) &&
+        policySnarked;
+      grade = proved ? "zk-proved" : "compact-runtime";
+      if (!proved && cfg.requireZkProve) {
+        return {
+          ok: false,
+          mode: status.mode,
+          grade: "rejected",
+          reason: `ZK prove required — ${zkProveError ?? "incomplete SNARK batch"}`,
+          compact: { kyc, recipient, policy, spend },
+          proved: false,
+          zkProveError,
+          proveTimings,
+        };
       }
     } else if (cfg.requireZkProve) {
       return {
@@ -348,42 +399,47 @@ export async function attestAndExecuteSessionAuth(input: {
       ok: false,
       mode: status.mode,
       grade: "rejected",
-      reason: "Compact artifacts required for CircledProof",
+      reason: "Compact artifacts required for CircleProof",
     };
   }
   try {
     await syncKycRoot(input.kycRoot, input.leaf);
-    const compact = await runCompactCircuit("prove_session_auth", [
-      input.leaf,
-      input.kycRoot,
-      input.challenge,
-      input.relyingPartyId,
-      input.timeWindow,
-    ]);
+    const attemptZk =
+      status.proofServerOk && status.artifactsOk && status.proverKeysLoaded.length >= 2;
+    if (attemptZk) void warmProverKeys(["prove_session_auth"]);
+
+    const pipe = await compactThenSnark(
+      "prove_session_auth",
+      () =>
+        runCompactCircuit("prove_session_auth", [
+          input.leaf,
+          input.kycRoot,
+          input.challenge,
+          input.relyingPartyId,
+          input.timeWindow,
+        ]),
+      attemptZk
+    );
+    const compact = pipe.compact;
 
     let proved = false;
     let snarkDigests: Record<string, string> | undefined;
     let zkProveError: string | undefined;
     let grade: AttestationGrade = "compact-runtime";
 
-    const attemptZk =
-      status.proofServerOk && status.artifactsOk && status.proverKeysLoaded.length >= 2;
     if (attemptZk) {
-      const batch = await proveCircuitBatch([
-        { circuit: "prove_session_auth", proofData: compact.proofData },
-      ]);
-      if (batch.ok) {
+      if (pipe.snarkOk && pipe.digest) {
         proved = true;
-        snarkDigests = batch.digests;
+        snarkDigests = { prove_session_auth: pipe.digest };
         grade = "zk-proved";
       } else {
-        zkProveError = batch.reason;
+        zkProveError = pipe.snarkError;
         if (cfg.requireZkProve) {
           return {
             ok: false,
             mode: status.mode,
             grade: "rejected",
-            reason: `NYXPAY_REQUIRE_ZK_PROVE=1 — ${batch.reason}`,
+            reason: `NYXPAY_REQUIRE_ZK_PROVE=1 — ${pipe.snarkError ?? "session SNARK failed"}`,
             compact,
             proved: false,
             zkProveError,

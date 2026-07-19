@@ -52,14 +52,12 @@ describe("zkProve — honest SNARK path", () => {
         async getProverKey() {}
       },
     }));
-    let n = 0;
     vi.doMock("@midnight-ntwrk/midnight-js-http-client-proof-provider", () => ({
       httpClientProvingProvider: () => ({
         check: async () => [],
-        prove: async () => {
-          n += 1;
-          if (n === 1) return new Uint8Array(64);
-          throw new Error("boom");
+        prove: async (_preimage: unknown, circuitId: string) => {
+          if (circuitId === "prove_spend_update") throw new Error("boom");
+          return new Uint8Array(64);
         },
       }),
     }));

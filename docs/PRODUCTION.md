@@ -1,4 +1,4 @@
-# Circled production readiness
+# Circle production readiness
 
 ## Security model
 
@@ -49,6 +49,22 @@ npm run start:soft        # ephemeral secrets + stub rails + ZK optional
 | `rejected` | Failed checks | No |
 
 `proved: true` is set **only** for `zk-proved`.
+
+## Payment lifecycle + rails
+
+P2P settle runs a durable, privacy-safe state machine (`created` → … → `reconciled`) with risk gates before rail reservation. Pilot money movement uses the **`internal_ledger`** adapter (`quote` / `reserve` / `settle` / `refund` / `status`). Stub UPI/card/IBAN/PIX remain fail-closed in strict mode.
+
+Ops surfaces:
+
+| Route | Purpose |
+|---|---|
+| `GET /api/ops/metrics` | Settle success/latency by grade (redacted logs) |
+| `GET /api/users/:id/payments` | Receipt timeline (no amounts) |
+| `POST /api/payments/:id/reconcile` | Device-apply / rail ack |
+| `GET /api/compliance/ops` | Sanctions age, SAR strategy, lifecycle gaps |
+| `GET /api/compliance/audit-export` | Privacy-safe audit bundle |
+
+See [LAUNCH_CHECKLIST.md](./LAUNCH_CHECKLIST.md) for capped-pilot go-live.
 
 ## Agent skills
 

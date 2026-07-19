@@ -12,10 +12,10 @@ type Props = {
 
 const BEATS = [
   { roman: "I", label: "Device Class 0 vault", hint: "Keys · balance · policy" },
-  { roman: "II", label: "Government ZK-KYC", hint: "Commitment only" },
-  { roman: "III", label: "ECDSA + Midnight", hint: "Wallet commitments" },
-  { roman: "IV", label: "Janhvi enrollment", hint: "On-device signature" },
-  { roman: "V", label: "Threshold recovery", hint: "No plaintext on server" },
+  { roman: "II", label: "Sandbox ZK-KYC", hint: "Commitment · not live DigiLocker" },
+  { roman: "III", label: "Compact + Midnight", hint: "Proof-server SNARKs" },
+  { roman: "IV", label: "Voice pay demo", hint: "Session auth · spend proof" },
+  { roman: "V", label: "Recovery kit", hint: "Passphrase · no plaintext on server" },
 ];
 
 /** One-click production demonstration launcher — cinema atelier */
@@ -58,10 +58,11 @@ export function DemoDirector({ onReady, onManual, autoLaunch = null }: Props) {
     <div className="director atelier-panel">
       <header className="director__head">
         <img src="/glyph.png" alt="" className="director__glyph" />
-        <p className="atelier-kicker">Demo hub</p>
-        <h1 className="brand-mark">Circled</h1>
+        <p className="atelier-kicker">Guided tour</p>
+        <h1 className="brand-mark">Circle</h1>
         <p className="director__pitch">
-          Private money, spoken softly — phone, live ZK, and a guide who walks the full cycle.
+          Provisions a demo vault, then walks voice pay to a zk-proved settle. For INR → USD/BTC
+          routing, use Universal adapter from the menu.
         </p>
       </header>
 
@@ -101,6 +102,8 @@ export function DemoDirector({ onReady, onManual, autoLaunch = null }: Props) {
           Manual setup — KYC then signup
         </button>
       </div>
+
+      <p className="director__foot">Pilot-ready · Midnight confidential payments</p>
     </div>
   );
 }

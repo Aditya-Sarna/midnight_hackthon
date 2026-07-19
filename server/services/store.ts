@@ -137,9 +137,9 @@ export interface Store {
   vaults: RecoveryVaultMeta[];
   notes: EncryptedNote[];
   issuerSecret: string;
-  /** CircledProof — pending challenges (public nonces, not secrets) */
-  nyxproofChallenges?: Record<string, import("./nyxproof.js").CircledProofChallenge>;
-  /** CircledProof — burned challenge nonces (single-use) */
+  /** CircleProof — pending challenges (public nonces, not secrets) */
+  nyxproofChallenges?: Record<string, import("./nyxproof.js").CircleProofChallenge>;
+  /** CircleProof — burned challenge nonces (single-use) */
   spentChallenges?: string[];
   issuanceRecords?: import("../compliance/services/kycIssuance.js").IssuanceRecord[];
   revocationEvents?: import("../compliance/services/revocation.js").RevocationEvent[];
@@ -159,8 +159,20 @@ export interface Store {
   txAuth?: import("../txAuth/registry.js").TxAuthState;
   /** Phase 10 — receiving-payment (JIT destinations + credit) */
   receivePay?: import("../receivePay/types.js").ReceivePayState;
-  /** Circled Credit v1 — same-asset overcollateralized lending pool */
+  /** Circle Credit v1 — same-asset overcollateralized lending pool */
   circledCredit?: import("../credit/types.js").CreditState;
+  /** Consumer dispute / refund coordination (metadata) */
+  disputes?: import("./disputes.js").DisputeRecord[];
+  /** KYC provider audit trail (Class 2 events only) */
+  kycAudit?: {
+    id: string;
+    at: number;
+    action: string;
+    issuanceRef?: string;
+    detail: string;
+  }[];
+  /** Durable P2P payment lifecycle (privacy-safe metadata) */
+  paymentLifecycle?: import("./paymentLifecycle.js").PaymentLifecycleRecord[];
 }
 
 function emptyStore(): Store {

@@ -1,5 +1,5 @@
 /**
- * Midnight Foundation integration — compulsory for Circled.
+ * Midnight Foundation integration — compulsory for Circle.
  * Official packages + Preprod endpoints from Midnight docs:
  * https://docs.midnight.network/sdks/official/midnight-js
  */

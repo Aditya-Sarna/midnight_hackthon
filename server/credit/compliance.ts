@@ -1,5 +1,5 @@
 /**
- * Circled Credit compliance surface (§8) — technical gates + explicit decisions.
+ * Circle Credit compliance surface (§8) — technical gates + explicit decisions.
  * Does not grant a lending license; names what must be resolved before real money.
  */
 import { hmacSign, sha256 } from "../services/crypto.js";
@@ -71,7 +71,7 @@ export function assertCreditEligible(
     if (!config.allowedJurisdictions.includes(jurisdiction)) {
       return {
         ok: false,
-        reason: `Jurisdiction ${jurisdiction} not enabled for Circled Credit (allowed: ${config.allowedJurisdictions.join(", ")})`,
+        reason: `Jurisdiction ${jurisdiction} not enabled for Circle Credit (allowed: ${config.allowedJurisdictions.join(", ")})`,
       };
     }
   }
@@ -92,6 +92,8 @@ export function borrowerRateDisclosure(input: {
   const interest = Math.ceil(principal * apr * (n / 12));
   const totalRepay = principal + interest;
   const principalInstallment = Math.ceil(principal / n);
+  const termMonths = n;
+  const termDays = n * 30;
   return {
     aprBps: input.aprBps,
     aprPercent: (input.aprBps / 100).toFixed(2) + "%",
@@ -101,6 +103,10 @@ export function borrowerRateDisclosure(input: {
     /** On-ledger installment (principal); interest disclosed separately for v1 */
     installmentAmount: principalInstallment,
     installments: n,
+    termMonths,
+    termDays,
+    termLabel: n === 1 ? "1 month" : `${n} months`,
+    installmentPeriodDays: 30,
     collateralAmount: input.collateralAmount,
     collateralRatioBps: input.collateralRatioBps,
     collateralRatioPercent: (input.collateralRatioBps / 100).toFixed(0) + "%",
@@ -157,7 +163,7 @@ export function furnishCreditBureauReport(
 export function creditComplianceDocument() {
   const config = creditComplianceConfig();
   return {
-    section: "Circled Credit §8",
+    section: "Circle Credit §8",
     product: config.product,
     licensing:
       "Lending licensure (e.g. NBFC/RBI, state money-lender, consumer credit) is jurisdiction-specific legal review — not resolved by this module",

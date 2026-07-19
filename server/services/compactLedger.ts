@@ -38,7 +38,7 @@ type WitnessBag = {
   creditOldOpen: Uint8Array;
   creditNewOpen: Uint8Array;
   policyAmount: bigint;
-  // Circled Credit v1
+  // Circle Credit v1
   lockOldBal: bigint;
   lockCollateral: bigint;
   lockLoan: bigint;
@@ -61,6 +61,8 @@ type WitnessBag = {
   standingMaxDef: bigint;
   standingThrOpen: Uint8Array;
   standingMaxDefOpen: Uint8Array;
+  strategyWeight: bigint;
+  strategyOpen: Uint8Array;
 };
 
 type WitnessSnap = {
@@ -95,6 +97,8 @@ type WitnessSnap = {
   standingMaxDef?: string;
   standingThrOpen?: string;
   standingMaxDefOpen?: string;
+  strategyWeight?: string;
+  strategyOpen?: string;
 };
 
 const bag: WitnessBag = {
@@ -129,6 +133,8 @@ const bag: WitnessBag = {
   standingMaxDef: 0n,
   standingThrOpen: randomOpening(),
   standingMaxDefOpen: randomOpening(),
+  strategyWeight: 42n,
+  strategyOpen: randomOpening(),
 };
 
 let pendingMembershipLeaf: Uint8Array | null = null;
@@ -166,6 +172,8 @@ function snapBag(): WitnessSnap {
     standingMaxDef: bag.standingMaxDef.toString(),
     standingThrOpen: openingToHex(bag.standingThrOpen),
     standingMaxDefOpen: openingToHex(bag.standingMaxDefOpen),
+    strategyWeight: bag.strategyWeight.toString(),
+    strategyOpen: openingToHex(bag.strategyOpen),
   };
 }
 
@@ -202,6 +210,17 @@ function restoreBag(s?: WitnessSnap) {
   if (s.standingMaxDef != null) bag.standingMaxDef = BigInt(s.standingMaxDef);
   if (s.standingThrOpen) bag.standingThrOpen = hexToOpening(s.standingThrOpen);
   if (s.standingMaxDefOpen) bag.standingMaxDefOpen = hexToOpening(s.standingMaxDefOpen);
+  if (s.strategyWeight != null) bag.strategyWeight = BigInt(s.strategyWeight);
+  if (s.strategyOpen) bag.strategyOpen = hexToOpening(s.strategyOpen);
+}
+
+export function setStrategyWitness(input: {
+  weight: bigint | number;
+  opening: Uint8Array | string;
+}) {
+  bag.strategyWeight = BigInt(input.weight);
+  bag.strategyOpen =
+    typeof input.opening === "string" ? hexToOpening(input.opening) : input.opening;
 }
 
 export function setSpendWitness(input: {
@@ -462,6 +481,12 @@ function buildWitnesses() {
     standingMaxDefOpening(ctx: { privateState: unknown }) {
       return [ctx.privateState, bag.standingMaxDefOpen];
     },
+    strategyWeight(ctx: { privateState: unknown }) {
+      return [ctx.privateState, bag.strategyWeight];
+    },
+    strategyOpening(ctx: { privateState: unknown }) {
+      return [ctx.privateState, bag.strategyOpen];
+    },
   };
 }
 
@@ -474,7 +499,7 @@ export function artifactsPresent(): boolean {
   );
 }
 
-/** Circled Credit v1 circuits — only call Compact when these keys exist */
+/** Circle Credit v1 circuits — only call Compact when these keys exist */
 export function creditArtifactsPresent(): boolean {
   return (
     artifactsPresent() &&
@@ -539,6 +564,7 @@ const WITNESS_CIRCUITS = new Set([
   "prove_loan_repayment",
   "prove_credit_standing",
   "prove_pool_solvency",
+  "prove_strategy_commitment",
 ]);
 
 function loadPersisted(): Persisted {
@@ -630,10 +656,22 @@ export type CompactRunResult = {
   };
 };
 
+/** Serialize Compact executes — shared circuitCtx / witness bag is not re-entrant. */
+let compactChain: Promise<unknown> = Promise.resolve();
+function withCompactLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = compactChain.then(fn, fn);
+  compactChain = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
 export async function runCompactCircuit(
   circuit: string,
   argHex: string[]
 ): Promise<CompactRunResult> {
+  return withCompactLock(async () => {
   // Caller sets bag witnesses before invoke; ensureContext replay can overwrite them.
   const staged = snapBag();
   const { m, ctx, c } = await ensureContext();
@@ -670,6 +708,7 @@ export async function runCompactCircuit(
       creditCount: led.credit_count?.toString(),
     },
   };
+  });
 }
 
 export async function runPolicyUpdate(
@@ -744,16 +783,53 @@ export async function runCreditStanding(args: {
   ]);
 }
 
+export async function runStrategyCommitment(args: {
+  strategyCommitment: string;
+  strategyId: string;
+  witness: Parameters<typeof setStrategyWitness>[0];
+}): Promise<CompactRunResult> {
+  setStrategyWitness(args.witness);
+  return runCompactCircuit("prove_strategy_commitment", [
+    args.strategyCommitment,
+    args.strategyId,
+  ]);
+}
+
+let lastSyncedRootHex: string | null = null;
+
 /** Publish app root + ensure leaf is in Compact HistoricMerkleTree */
 export async function syncKycRoot(rootHex: string, leafHex?: string): Promise<CompactRunResult> {
+  const p = loadPersisted();
+  const leafKey = leafHex ? bytesToHex(hexToBytes32(leafHex)) : null;
+  const leafReady = !leafKey || p.insertedLeaves.includes(leafKey);
+
+  // Skip re-publish when ledger already has this root + leaf (2nd+ pays were redoing KYC Compact)
+  if (circuitCtx && lastSyncedRootHex === rootHex && leafReady) {
+    const { m, ctx } = await ensureContext();
+    const led = m.ledger(ctx.currentQueryContext.state);
+    return {
+      ok: true,
+      circuit: "publish_kyc_root",
+      proofData: {
+        input: {} as never,
+        output: {} as never,
+        publicTranscript: [],
+        privateTranscriptOutputs: [],
+      },
+      ledger: {
+        kycRegistryRoot: bytesToHex(led.kyc_registry_root),
+        spentNullifierCount: led.spent_nullifier_count.toString(),
+        transferCount: led.transfer_count.toString(),
+        spentChallengeCount: led.spent_challenge_count.toString(),
+        creditCount: led.credit_count?.toString(),
+      },
+    };
+  }
+
   const rootResult = await runCompactCircuit("publish_kyc_root", [rootHex]);
-  if (leafHex) {
-    const p = loadPersisted();
-    const leaf = hexToBytes32(leafHex);
-    const leafKey = bytesToHex(leaf);
-    if (!p.insertedLeaves.includes(leafKey)) {
-      return runCompactCircuit("publish_kyc_leaf", [leafHex]);
-    }
+  lastSyncedRootHex = rootHex;
+  if (leafHex && !leafReady) {
+    return runCompactCircuit("publish_kyc_leaf", [leafHex]);
   }
   return rootResult;
 }
@@ -788,5 +864,6 @@ export function resetCompactLedger() {
   contract = null;
   mod = null;
   pendingMembershipLeaf = null;
+  lastSyncedRootHex = null;
   savePersisted(emptyPersisted());
 }

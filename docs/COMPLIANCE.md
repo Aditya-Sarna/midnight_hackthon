@@ -1,4 +1,4 @@
-# Circled — Backend Compliance & Feature Document
+# Circle — Backend Compliance & Feature Document
 
 Counterpart to the architecture/skill spec. Answers: what the backend does, what it stores, and what regulatory obligations that creates.
 
@@ -29,7 +29,7 @@ Machine-readable twin: `GET /api/compliance`
 
 | Feature | Backend visibility | Regulatory? |
 |---|---|---|
-| Voice intent | None — STT on-device | No |
+| Voice intent | Transcript only after browser Web Speech (Chrome may use cloud STT); payment secrets stay Class 0 | Clarify STT boundary — not a private mic claim |
 | KYC onboarding | Pass/fail + jurisdiction + sanctions | Yes |
 | Recipient resolution | Some valid KYC'd party received proof-verified payment | No |
 | Spend/policy proof | Pass/fail only | No |

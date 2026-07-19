@@ -20,6 +20,8 @@ type Props = {
   locale?: UiLocale;
   /** ASR below confidence/shape floors — force careful review */
   voiceRisk?: boolean;
+  /** Recipient was not in contacts — saved on-device for this pay */
+  newContact?: boolean;
   recipientCandidates?: string[];
   /** Policy T2 / high-value — require second Accept */
   requiresSecondaryConfirm?: boolean;
@@ -36,6 +38,7 @@ export function PaymentPing({
   error,
   locale: localeProp,
   voiceRisk,
+  newContact,
   recipientCandidates = [],
   requiresSecondaryConfirm,
   onConfirm,
@@ -185,7 +188,19 @@ export function PaymentPing({
     >
       <div className="pay-sheet__brand">
         <img src="/glyph.png" alt="" />
-        <span className="brand-mark">Circled</span>
+        <span className="brand-mark">Circle</span>
+      </div>
+
+      <p className="pay-sheet__eyebrow">{t.eyebrow}</p>
+
+      <div className="pay-sheet__hero" aria-live="polite">
+        <em>{t.amount}</em>
+        <strong>
+          {formatMoney(Number.isFinite(parsedAmount) ? parsedAmount : 0, currency)}
+        </strong>
+        <span>
+          {t.payTo} <b>{editName.trim() || "…"}</b>
+        </span>
       </div>
 
       {isVerified && brand?.brand && (
@@ -249,11 +264,15 @@ export function PaymentPing({
         </div>
       )}
 
-      <p className="pay-sheet__eyebrow">{t.eyebrow}</p>
-
       {voiceRisk && (
         <p className="pay-sheet__risk" role="status">
           {t.voiceLowConfidence}
+        </p>
+      )}
+
+      {newContact && (
+        <p className="pay-sheet__risk" role="status">
+          New contact — Accept saves them on this device for next time.
         </p>
       )}
 
@@ -278,7 +297,6 @@ export function PaymentPing({
           }}
           aria-label={t.amountAria}
         />
-        <em>{formatMoney(Number.isFinite(parsedAmount) ? parsedAmount : 0, currency)}</em>
       </label>
 
       <label className="pay-sheet__field">
@@ -318,7 +336,7 @@ export function PaymentPing({
       )}
 
       <label className="pay-sheet__field">
-        <span>Note</span>
+        <span>{t.noteLabel}</span>
         <input
           type="text"
           value={editNote}
@@ -329,8 +347,8 @@ export function PaymentPing({
             setSecondaryArmed(false);
             setEditNote(e.target.value);
           }}
-          aria-label="Private payment note"
-          placeholder="Private note (encrypted)"
+          aria-label={t.noteLabel}
+          placeholder={t.notePlaceholder}
         />
       </label>
 

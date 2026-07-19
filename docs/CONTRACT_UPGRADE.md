@@ -10,7 +10,7 @@
 ## Bump procedure
 
 1. Edit circuits in `contracts/nyxpay.compact` (prefer additive witnesses / new circuits).
-2. Increment a comment header version, e.g. `* Circled Compact v5.1`.
+2. Increment a comment header version, e.g. `* Circle Compact v5.1`.
 3. Compile: `npm run compact:compile`
 4. Confirm new prover keys under `contracts/managed/nyxpay/keys/`.
 5. Run `npm test` — settle + zkProve suites must pass.

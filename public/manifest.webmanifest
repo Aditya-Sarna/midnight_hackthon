@@ -1,6 +1,6 @@
 {
-  "name": "Circled",
-  "short_name": "Circled",
+  "name": "Circle",
+  "short_name": "Circle",
   "description": "Confidential voice payments on Midnight",
   "start_url": "/",
   "display": "standalone",

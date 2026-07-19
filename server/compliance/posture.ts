@@ -38,8 +38,8 @@ export const COMPLIANCE_GAPS = [
   },
   {
     id: "nyxproof-otp-reg",
-    title: "CircledProof OTP regulatory equivalence",
-    section: "CircledProof §7",
+    title: "CircleProof OTP regulatory equivalence",
+    section: "CircleProof §7",
     status: "disclosed" as const,
     detail:
       "prove_session_auth is a 'something you have' factor; validate against jurisdiction-specific 2FA language before treating as OTP-equivalent.",

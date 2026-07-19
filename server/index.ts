@@ -26,7 +26,7 @@ import {
   initMidnightFoundation,
   probeMidnightFoundation,
 } from "./services/midnight.js";
-import { resolveProofMode, attestAndExecuteSessionAuth } from "./services/proofServer.js";
+import { resolveProofMode, warmProverKeys } from "./services/proofServer.js";
 import { createRateLimitStore } from "./services/rateLimitRedis.js";
 import { pubkeyThumbprint, verifyEcdsaSignature } from "./services/keys.js";
 import {
@@ -43,6 +43,36 @@ import { SANCTIONS_RESCREEN_MS } from "./compliance/posture.js";
 import { readCompactLedger } from "./services/compactLedger.js";
 import { deployStatus } from "./services/onchain.js";
 import { sha256 } from "./services/crypto.js";
+import { railsHubDocument } from "./services/railsHub.js";
+import { assetRegistryDocument } from "./services/assetRegistry.js";
+import { paymentMethodRegistryDocument } from "./services/paymentMethodRegistry.js";
+import {
+  createSandboxAccount,
+  listSandboxAccounts,
+} from "./services/sandboxAccounts.js";
+import {
+  createUniversalQuote,
+  createUniversalRoute,
+  getUniversalPayment,
+  listRouteCards,
+  refundUniversal,
+  settleUniversal,
+  universalOpsDashboard,
+} from "./services/universalService.js";
+import {
+  listPaymentLifecycleForUser,
+  publicReceiptView,
+  getPaymentLifecycle,
+} from "./services/paymentLifecycle.js";
+import { reconcilePayment, reconciliationSummary } from "./services/reconciliation.js";
+import { settleMetricsView, logStructured } from "./services/observability.js";
+import { resolveRailAdapter } from "./txAuth/rails/registry.js";
+import {
+  advanceDispute,
+  listDisputes,
+  openDispute,
+  type DisputeStatus,
+} from "./services/disputes.js";
 import {
   creditComplianceDocument,
   furnishCreditBureauReport,
@@ -55,6 +85,7 @@ import {
   issueCreditIdentity,
   liquidateIfDue,
   listBorrowerLoans,
+  previewBorrowDeals,
   previewBorrowDisclosure,
   proveStanding,
   repayLoan,
@@ -192,7 +223,7 @@ app.use("/api/skills", requireSkillToken);
 
 const midnightBoot = initMidnightFoundation("preprod");
 console.log(
-  `Circled · Midnight network=${midnightBoot.networkId} · Class0=device-only · strict=${cfg.isStrict}`
+  `Circle · Midnight network=${midnightBoot.networkId} · Class0=device-only · strict=${cfg.isStrict}`
 );
 
 const store = loadStore();
@@ -236,7 +267,7 @@ async function handleSettle(req: Request, res: Response, userId: string) {
 
   if (!body.sessionAuth?.proof || !body.sessionAuthTimeWindow) {
     return res.status(400).json({
-      error: "CircledProof sessionAuth required on confirm-tap (OTP replacement)",
+      error: "CircleProof sessionAuth required on confirm-tap (OTP replacement)",
     });
   }
   const session = verifyPaymentSessionAuth(store, {
@@ -253,39 +284,55 @@ async function handleSettle(req: Request, res: Response, userId: string) {
   const relyingPartyId = `circled:payment:${String(body.intentCommitment)}`;
   const nonce = String(body.intentCommitment).slice(0, 48);
   const challenge = sha256(`nyxproof:challenge:${nonce}|${relyingPartyId}|${tw}`);
-  const compactSession = await attestAndExecuteSessionAuth({
-    kycRoot: store.kycRoot,
-    leaf: user.credentialCommitment,
-    challenge,
-    relyingPartyId: sha256(`rp:${relyingPartyId}`),
-    timeWindow: sha256(tw),
-  });
-  if (!compactSession.ok) {
+
+  // Session Compact+SNARK runs in parallel with payment Compact+SNARK pipelines
+  const result = await settlePublicPayment(
+    store,
+    user,
+    {
+      intentCommitment: String(body.intentCommitment),
+      signature: String(body.signature),
+      spendNullifier: String(body.spendNullifier),
+      oldBalanceCommitment: String(body.oldBalanceCommitment),
+      newBalanceCommitment: String(body.newBalanceCommitment),
+      newPolicyCommitment: String(body.newPolicyCommitment),
+      recipientPubkey: String(body.recipientPubkey),
+      recipientProof: body.recipientProof,
+      policyProof: body.policyProof,
+      spendProof: body.spendProof,
+      balanceWitness: body.balanceWitness,
+      encryptedNote: body.encryptedNote,
+      stepUp: body.stepUp
+        ? {
+            kind: body.stepUp.kind === "biometric" ? "biometric" : "passkey",
+            at: body.stepUp.at != null ? Number(body.stepUp.at) : Date.now(),
+          }
+        : undefined,
+    },
+    {
+      parallelSession: {
+        challenge,
+        relyingPartyId: sha256(`rp:${relyingPartyId}`),
+        timeWindow: sha256(tw),
+      },
+    }
+  );
+
+  if (!result.ok) {
+    logStructured("warn", "api.settle.reject", {
+      userId: userId.slice(0, 8),
+      reason: result.reason,
+      paymentId: "paymentId" in result ? result.paymentId : undefined,
+    });
     return res.status(422).json({
       ok: false,
-      reason: compactSession.reason ?? "Compact session auth failed",
-      nyxproof: true,
+      reason: result.reason,
+      paymentId: "paymentId" in result ? result.paymentId : undefined,
+      nyxproof: result.reason?.toLowerCase().includes("session") ? true : undefined,
     });
   }
 
-  const result = await settlePublicPayment(store, user, {
-    intentCommitment: String(body.intentCommitment),
-    signature: String(body.signature),
-    spendNullifier: String(body.spendNullifier),
-    oldBalanceCommitment: String(body.oldBalanceCommitment),
-    newBalanceCommitment: String(body.newBalanceCommitment),
-    newPolicyCommitment: String(body.newPolicyCommitment),
-    recipientPubkey: String(body.recipientPubkey),
-    recipientProof: body.recipientProof,
-    policyProof: body.policyProof,
-    spendProof: body.spendProof,
-    balanceWitness: body.balanceWitness,
-    encryptedNote: body.encryptedNote,
-  });
-
-  if (!result.ok) {
-    return res.status(422).json({ ok: false, reason: result.reason });
-  }
+  const compactSession = result.sessionAttest;
 
   compliance.settlementRelay.log("submit", "committed_payload");
   compliance.settlementRelay.flush();
@@ -293,6 +340,12 @@ async function handleSettle(req: Request, res: Response, userId: string) {
   return res.json({
     ok: true,
     eventId: result.eventId,
+    paymentId: result.paymentId,
+    correlationId: result.correlationId,
+    receiptId: result.receiptId,
+    lifecycleState: result.lifecycleState,
+    riskDecision: result.riskDecision,
+    rail: result.rail,
     delayMs: result.delayMs,
     proofs: result.proofs,
     proofMode: result.proofMode,
@@ -307,10 +360,10 @@ async function handleSettle(req: Request, res: Response, userId: string) {
       sessionAuth: true,
       challengeBurned: true,
       otpReplaced: true,
-      compactMode: compactSession.mode,
-      attestationGrade: compactSession.grade,
-      compactProved: compactSession.proved ?? false,
-      snarkDigests: compactSession.snarkDigests,
+      compactMode: compactSession?.mode,
+      attestationGrade: compactSession?.grade,
+      compactProved: compactSession?.proved ?? false,
+      snarkDigests: compactSession?.snarkDigests,
     },
     user: publicUser(user),
   });
@@ -355,6 +408,268 @@ app.post("/api/offramp", (req, res) => {
   });
 });
 
+/** Rails hub — asset model + rail readiness (honest pilot surface) */
+app.get("/api/rails", (_req, res) => {
+  res.json(railsHubDocument());
+});
+
+app.get("/api/assets", (_req, res) => {
+  res.json(assetRegistryDocument());
+});
+
+app.get("/api/payment-methods", (_req, res) => {
+  res.json(paymentMethodRegistryDocument());
+});
+
+app.get("/api/universal/sandbox-accounts", (_req, res) => {
+  res.json({ ok: true, accounts: listSandboxAccounts() });
+});
+
+app.post("/api/universal/sandbox-accounts", (req, res) => {
+  try {
+    const account = createSandboxAccount({
+      displayName: String(req.body?.displayName || ""),
+      preferredAsset: String(req.body?.preferredAsset || "USD").toUpperCase() as
+        | "USD"
+        | "BTC"
+        | "CIRCLE_UNIT",
+      preferredMethod: req.body?.preferredMethod,
+      jurisdiction: req.body?.jurisdiction,
+    });
+    res.status(201).json({ ok: true, account });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : "bad request" });
+  }
+});
+
+app.get("/api/universal/route-cards", (_req, res) => {
+  res.json({ ok: true, cards: listRouteCards() });
+});
+
+app.post("/api/universal/quote", (req, res) => {
+  try {
+    const result = createUniversalQuote({
+      accountId: String(req.body?.accountId || ""),
+      amount: String(req.body?.amount || ""),
+      senderId: req.body?.senderId ? String(req.body.senderId) : undefined,
+      sourceAsset: req.body?.sourceAsset ? String(req.body.sourceAsset) : undefined,
+      sourceMethod: req.body?.sourceMethod ? String(req.body.sourceMethod) : undefined,
+    });
+    res.json({
+      ok: true,
+      quoteId: result.quote.quoteId,
+      quote: result.quote,
+      accountId: result.accountId,
+      intent: {
+        sourceAsset: result.intent.sourceAsset,
+        targetAsset: result.intent.targetAsset,
+        sourceMethod: result.intent.sourceMethod,
+        targetMethod: result.intent.targetMethod,
+        recipientId: result.intent.recipientId,
+      },
+    });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : "quote failed" });
+  }
+});
+
+app.post("/api/universal/route", (req, res) => {
+  try {
+    const { route, binding } = createUniversalRoute({
+      quoteId: String(req.body?.quoteId || ""),
+    });
+    res.json({
+      ok: true,
+      routeId: route.routeId,
+      quoteId: route.quote.quoteId,
+      sourceAdapter: route.sourceAdapter,
+      conversionAdapter: route.conversionAdapter,
+      targetAdapter: route.targetAdapter,
+      routeCommitment: route.routeCommitment,
+      compliance: route.compliance,
+      estimatedSettlementTimeMs: route.estimatedSettlementTimeMs,
+      mock: route.mock,
+      quote: route.quote,
+      binding,
+      note: route.note,
+    });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : "route failed" });
+  }
+});
+
+async function handleUniversalSettle(req: Request, res: Response) {
+  try {
+    const payment = await settleUniversal({
+      quoteId: String(req.body?.quoteId || ""),
+      routeId: String(req.body?.routeId || ""),
+      routeCommitment: String(req.body?.routeCommitment || ""),
+      tamperRouteId: req.body?.tamperRouteId
+        ? String(req.body.tamperRouteId)
+        : undefined,
+    });
+    res.json({
+      ok: true,
+      payment,
+      quoteId: payment.quoteId,
+      routeId: payment.routeId,
+      sourceAdapter: payment.sourceAdapter,
+      conversionAdapter: payment.conversionAdapter,
+      targetAdapter: payment.targetAdapter,
+      proofMode: payment.proofMode,
+      attestationGrade: payment.attestationGrade,
+      receiptId: payment.receiptId,
+      lifecycleState: payment.lifecycleState,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "settle failed";
+    const status = msg.includes("commitment mismatch") ? 409 : 400;
+    res.status(status).json({ error: msg });
+  }
+}
+
+app.post("/api/universal/sandbox-settle", handleUniversalSettle);
+app.post("/api/universal/settle", handleUniversalSettle);
+
+app.get("/api/universal/payments/:id", (req, res) => {
+  const payment = getUniversalPayment(req.params.id);
+  if (!payment) return res.status(404).json({ error: "not found" });
+  res.json({ ok: true, payment });
+});
+
+app.get("/api/universal/receipt/:id", (req, res) => {
+  const payment = getUniversalPayment(req.params.id);
+  if (!payment) return res.status(404).json({ error: "not found" });
+  res.json({
+    ok: true,
+    receiptId: payment.receiptId,
+    quoteId: payment.quoteId,
+    routeId: payment.routeId,
+    lifecycleState: payment.lifecycleState,
+    proofMode: payment.proofMode,
+    attestationGrade: payment.attestationGrade,
+    sourceAdapter: payment.sourceAdapter,
+    conversionAdapter: payment.conversionAdapter,
+    targetAdapter: payment.targetAdapter,
+    riskDecision: payment.riskDecision,
+    reconciliationGaps: payment.reconciliationGaps,
+    timeline: payment.timeline,
+  });
+});
+
+app.post("/api/universal/refund", (req, res) => {
+  try {
+    const payment = refundUniversal(String(req.body?.paymentId || req.body?.id || ""));
+    res.json({ ok: true, payment });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : "refund failed" });
+  }
+});
+
+app.get("/api/ops/universal", async (_req, res) => {
+  res.json(await universalOpsDashboard());
+});
+
+app.get("/api/judge/command-center", async (_req, res) => {
+  const ops = await universalOpsDashboard();
+  const midnight = await probeMidnightFoundation().catch(() => null);
+  res.json({
+    ok: true,
+    proofServer: ops.proof,
+    compact: {
+      circuits: [
+        "prove_authorized_transaction",
+        "prove_credit_update",
+        "prove_balance",
+        "prove_spend_update",
+      ],
+      note: "Compact circuits loaded via midnight foundation / compact-runtime fallback",
+      artifactsOk: midnight?.compactArtifacts?.ok ?? false,
+      artifactsDetail: midnight?.compactArtifacts?.detail,
+    },
+    activeRoute: ops.latestReceipt,
+    midnight: midnight
+      ? {
+          ready: Boolean(midnight.proofServer?.ok || midnight.compactArtifacts?.ok),
+          networkId: midnight.networkId,
+          proofServer: midnight.proofServer,
+          compactArtifacts: midnight.compactArtifacts,
+        }
+      : { ready: false },
+    settle: ops.settle,
+    metrics: ops.metrics,
+  });
+});
+
+app.get("/api/asset", (_req, res) => {
+  res.json({
+    id: "CIRCLE_UNIT",
+    symbol: "CIRCLE",
+    name: "CircleProof product unit",
+    networkFeeAsset: "tDUST",
+    oneLiner:
+      "Class 0 CIRCLE product units on the device vault; public side is Compact balance commitments. Not INR ACH / UPI / USDC — Midnight gold path is Compact + proof-server SNARKs; Preprod tDUST only for optional on-chain broadcast fees.",
+  });
+});
+
+/** Compliance ops dashboard (sanctions age, SAR posture, KYC audit, disputes) */
+app.get("/api/compliance/ops", (_req, res) => {
+  const issuance = store.issuanceRecords ?? [];
+  const latest = issuance[issuance.length - 1];
+  const sanctionsAgeMs = latest ? Date.now() - latest.sanctionsCheckedAt : null;
+  res.json({
+    ok: true,
+    asset: "CIRCLE_UNIT",
+    sanctions: {
+      rescreenMs: SANCTIONS_RESCREEN_MS,
+      lastCheckedAt: latest?.sanctionsCheckedAt ?? null,
+      ageMs: sanctionsAgeMs,
+      stale: sanctionsAgeMs != null ? sanctionsAgeMs > SANCTIONS_RESCREEN_MS : true,
+    },
+    kycAudit: (store.kycAudit ?? []).slice(0, 20),
+    disputesOpen: (store.disputes ?? []).filter(
+      (d) => d.status === "opened" || d.status === "merchant_review"
+    ).length,
+    retention: compliance.retention(),
+    kycProvider: compliance.kycProviderId,
+    paymentLifecycle: reconciliationSummary(store),
+    settleMetrics: settleMetricsView(),
+    gaps: [
+      "SAR/STR: low-value capped wallet strategy — escalate via selective disclosure under order",
+      "Recovery DPA: threshold cloud backup is optional; passphrase kit is device-held",
+      "KYC issuer is sandbox — wire DigiLocker/Onfido-class provider before real money",
+    ],
+  });
+});
+
+app.get("/api/users/:id/disputes", (req, res) => {
+  res.json({ disputes: listDisputes(store, req.params.id) });
+});
+
+app.post("/api/users/:id/disputes", (req, res) => {
+  try {
+    const rec = openDispute(store, {
+      userId: req.params.id,
+      paymentId: String(req.body?.paymentId ?? ""),
+      amount: Number(req.body?.amount ?? 0),
+      reason: String(req.body?.reason ?? "mistaken_recipient"),
+    });
+    res.json({ ok: true, dispute: rec });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : "Dispute failed" });
+  }
+});
+
+app.post("/api/disputes/:id/advance", (req, res) => {
+  try {
+    const status = String(req.body?.status ?? "merchant_review") as DisputeStatus;
+    const rec = advanceDispute(store, req.params.id, status);
+    res.json({ ok: true, dispute: rec });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : "Advance failed" });
+  }
+});
+
 /** Multi-party split plan (client still settles; server records opaque note commitments) */
 app.post("/api/split/plan", (req, res) => {
   const legs = Array.isArray(req.body?.legs) ? req.body.legs : [];
@@ -397,11 +712,84 @@ app.get("/api/health", async (_req, res) => {
     compactLedger: compact,
     onchain,
     merchantHsm,
+    settleMetrics: settleMetricsView(),
+    paymentLifecycle: reconciliationSummary(store),
     compliance: {
       services: complianceDocument().serviceInventory.length,
       gapsOpen: complianceDocument().gapsToDisclose.filter((g) => g.status === "open").length,
     },
   });
+});
+
+/** Settle observability (privacy-safe aggregates) */
+app.get("/api/ops/metrics", (_req, res) => {
+  res.json({
+    ok: true,
+    settle: settleMetricsView(),
+    reconciliation: reconciliationSummary(store),
+  });
+});
+
+app.get("/api/users/:id/payments", (req, res) => {
+  const user = findUser(req.params.id);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  const rows = listPaymentLifecycleForUser(store, user.id).map(publicReceiptView);
+  res.json({ ok: true, payments: rows });
+});
+
+app.get("/api/payments/:paymentId", (req, res) => {
+  const rec = getPaymentLifecycle(store, req.params.paymentId);
+  if (!rec) return res.status(404).json({ error: "Payment not found" });
+  res.json({ ok: true, ...publicReceiptView(rec) });
+});
+
+app.post("/api/payments/:paymentId/reconcile", (req, res) => {
+  const out = reconcilePayment(store, {
+    paymentId: req.params.paymentId,
+    proofEventId: req.body?.proofEventId ? String(req.body.proofEventId) : undefined,
+    railSettlementId: req.body?.railSettlementId
+      ? String(req.body.railSettlementId)
+      : undefined,
+    deviceApplied: Boolean(req.body?.deviceApplied),
+    recipientNotified: Boolean(req.body?.recipientNotified),
+  });
+  res.status(out.ok ? 200 : 409).json(out);
+});
+
+app.get("/api/rails/:railId/status/:refId", async (req, res) => {
+  const adapter = resolveRailAdapter(req.params.railId) as {
+    status?: (id: string) => Promise<unknown>;
+  };
+  if (!adapter.status) {
+    return res.status(404).json({ error: "Rail does not expose status()" });
+  }
+  res.json(await adapter.status(req.params.refId));
+});
+
+/** HMAC webhook ack for sandbox PSP (and future ExtendedRailAdapters) */
+app.post("/api/rails/:railId/webhook", async (req, res) => {
+  const adapter = resolveRailAdapter(req.params.railId) as {
+    handleWebhook?: (payload: unknown) => Promise<unknown>;
+    capabilities?: () => { canWebhook?: boolean; mock?: boolean };
+  };
+  if (!adapter.handleWebhook) {
+    return res.status(404).json({ error: "Rail does not expose handleWebhook()" });
+  }
+  const rawBody = JSON.stringify(req.body ?? {});
+  const signature = String(
+    req.header("x-circle-signature") || req.header("x-sandbox-psp-signature") || ""
+  );
+  const out = await adapter.handleWebhook({
+    ...(req.body ?? {}),
+    rawBody,
+    signature,
+  });
+  const ok = Boolean((out as { ok?: boolean })?.ok);
+  res.status(ok ? 200 : 401).json(out);
+});
+
+app.get("/api/compliance/audit-export", (_req, res) => {
+  res.json(compliance.auditReporting.exportOpsBundle());
 });
 
 app.get("/api/midnight", async (_req, res) => {
@@ -450,7 +838,7 @@ app.get("/api/compliance", (_req, res) => {
         "Compact-runtime execute + real proof-server /prove SNARKs (grade zk-proved); structural-only rejected under NYXPAY_REQUIRE_PROOFS",
       storeSchema: 4,
       storeEngine: "better-sqlite3",
-      otpReplacement: "CircledProof prove_session_auth — no transmittable code",
+      otpReplacement: "CircleProof prove_session_auth — no transmittable code",
       verifiedMerchantPayment: "a26z-Brand skill — POST /api/skills/verified-merchant-payment",
       railAgnosticTxAuth:
         "a26z-Brand intent auth — POST /api/skills/rail-agnostic-tx-auth/authorize",
@@ -469,7 +857,7 @@ app.get("/api/compliance", (_req, res) => {
   });
 });
 
-// ——— CircledProof: OTP replacement (circledproof alias + legacy nyxproof) ———
+// ——— CircleProof: OTP replacement (circledproof alias + legacy nyxproof) ———
 app.get(["/api/nyxproof", "/api/circledproof"], (_req, res) => {
   res.json(nyxproofDocument());
 });
@@ -848,13 +1236,16 @@ app.post("/api/skills/receiving-payment/webhook", (req, res) => {
   res.json({ ok: true, delivered: true, event });
 });
 
-// ——— Circled Credit v1 (same-asset overcollateralized · pool-funded) ———
+// ——— Circle Credit v1 (same-asset overcollateralized · pool-funded) ———
 app.get("/api/skills/circled-credit", (_req, res) => {
   res.json(creditSkillDocument());
 });
 
 app.get("/api/skills/circled-credit/status", (_req, res) => {
-  res.json(getCreditStatus(store));
+  const status = getCreditStatus(store);
+  // Persist one-time pilot pool seed from creditState()
+  saveStore(store);
+  res.json(status);
 });
 
 app.get("/api/skills/circled-credit/compliance", (_req, res) => {
@@ -868,6 +1259,9 @@ app.get("/api/skills/circled-credit/disclosure", (req, res) => {
   );
   const installments =
     req.query.installments != null ? Number(req.query.installments) : undefined;
+  if (String(req.query.deals ?? "") === "1" || String(req.query.deals ?? "") === "true") {
+    return res.json(previewBorrowDeals({ loanAmount, collateralAmount }));
+  }
   res.json(previewBorrowDisclosure({ loanAmount, collateralAmount, installments }));
 });
 
@@ -1315,6 +1709,64 @@ app.post("/api/users/:id/notes/:noteId/claim", (req, res) => {
  * Class 0 opening migration — same balance, new Compact persistentCommit opening.
  * Burns the old balance nullifier so the prior commitment cannot be reused.
  */
+/**
+ * Private strategy commitment — weight stays a Compact witness; ledger sees commitment only.
+ */
+app.post("/api/users/:id/strategy/commit", async (req, res) => {
+  const user = findUser(req.params.id);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  try {
+    const weight = BigInt(req.body?.weight ?? 0);
+    const opening = String(req.body?.opening ?? "");
+    const strategyCommitment = String(req.body?.strategyCommitment ?? "");
+    let strategyId = String(req.body?.strategyId ?? "").replace(/^0x/, "");
+    if (!/^[0-9a-fA-F]{64}$/.test(opening) || !/^[0-9a-fA-F]{64}$/.test(strategyCommitment)) {
+      return res.status(400).json({
+        error: "opening + strategyCommitment (32-byte hex) required",
+      });
+    }
+    if (!/^[0-9a-fA-F]{64}$/.test(strategyId)) {
+      const { createHash } = await import("node:crypto");
+      strategyId = createHash("sha256")
+        .update(`circled:strategy:${user.id}:${strategyCommitment}`)
+        .digest("hex");
+    }
+    const { compactBalanceCommit, hexToOpening } = await import("./services/compactCommit.js");
+    const expected = compactBalanceCommit(weight, hexToOpening(opening));
+    if (expected !== strategyCommitment.toLowerCase() && expected !== strategyCommitment) {
+      // compare case-insensitive
+      if (expected.toLowerCase() !== strategyCommitment.toLowerCase()) {
+        return res.status(422).json({ ok: false, reason: "commitment does not match weight+opening" });
+      }
+    }
+    const { runStrategyCommitment, artifactsPresent } = await import(
+      "./services/compactLedger.js"
+    );
+    if (!artifactsPresent()) {
+      return res.status(503).json({ ok: false, reason: "Compact artifacts missing" });
+    }
+    const compact = await runStrategyCommitment({
+      strategyCommitment: strategyCommitment.toLowerCase(),
+      strategyId: strategyId.toLowerCase(),
+      witness: { weight, opening },
+    });
+    res.json({
+      ok: true,
+      circuit: "prove_strategy_commitment",
+      strategyCommitment: strategyCommitment.toLowerCase(),
+      strategyId: strategyId.toLowerCase(),
+      compactProved: true,
+      transferCount: compact.ledger.transferCount,
+      proofDataPresent: Boolean(compact.proofData),
+    });
+  } catch (e) {
+    res.status(500).json({
+      ok: false,
+      reason: e instanceof Error ? e.message : String(e),
+    });
+  }
+});
+
 app.post("/api/users/:id/reseal-balance", (req, res) => {
   const user = findUser(req.params.id);
   if (!user) return res.status(404).json({ error: "User not found" });
@@ -1340,6 +1792,23 @@ app.get("/api/users/:id/vault", (req, res) => {
   const meta = getVaultMeta(store, req.params.id);
   if (!meta) return res.status(404).json({ error: "No vault" });
   res.json({ ...meta, coordinator: compliance.recoveryCoordinator.status(req.params.id) });
+});
+
+app.post("/api/users/:id/vault/enroll", (req, res) => {
+  const user = findUser(req.params.id);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  const vaultCiphertext = String(req.body?.vaultCiphertext ?? "");
+  if (!vaultCiphertext) {
+    return res.status(400).json({ error: "vaultCiphertext required" });
+  }
+  try {
+    const vault = provisionCloudVaultMeta(store, user.id, vaultCiphertext);
+    res.json({ ok: true, ...vault });
+  } catch (e) {
+    res.status(500).json({
+      error: e instanceof Error ? e.message : "Vault enroll failed",
+    });
+  }
 });
 
 app.post("/api/users/:id/vault/recover", (req, res) => {
@@ -1518,7 +1987,13 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   app.listen(PORT, cfg.bindHost, () => {
-    console.log(`Circled production backend on http://${cfg.bindHost}:${PORT}`);
+    console.log(`Circle production backend on http://${cfg.bindHost}:${PORT}`);
     startBackgroundLoops();
+    // Prefetch Midnight prover keys so first payment SNARK isn't cold
+    void warmProverKeys().then((w) => {
+      if (w.warmed.length) {
+        console.log(`[circled] prover keys warm: ${w.warmed.join(", ")}`);
+      }
+    });
   });
 }

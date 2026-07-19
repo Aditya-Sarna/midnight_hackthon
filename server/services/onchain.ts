@@ -1,11 +1,12 @@
 /**
  * On-chain Preprod settlement bridge.
- * Compact-runtime ledger is always advanced on settle.
- * Preprod broadcast requires MIDNIGHT_WALLET_SEED + MIDNIGHT_CONTRACT_ADDRESS + proof-server.
+ * Compact-runtime ledger + SNARKs settle the payment path.
+ * Preprod broadcast is best-effort and must not block Accept UX unless requireOnchain.
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadConfig } from "../config.js";
 import { requireMidnight } from "./midnight.js";
 import { artifactsPresent, MANAGED_DIR } from "./compactLedger.js";
 
@@ -13,7 +14,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEPLOY_PATH = join(__dirname, "../../data/onchain-deployment.json");
 
 export type OnChainReceipt = {
-  status: "submitted" | "ready-unfunded" | "local-compact-ledger";
+  status: "submitted" | "ready-unfunded" | "local-compact-ledger" | "broadcast-queued";
   network: string;
   contractAddress?: string;
   txId?: string;
@@ -70,9 +71,8 @@ export function onchainConfigStatus() {
   };
 }
 
-export async function settleOnChainIfConfigured(input: {
+async function runBroadcast(input: {
   circuit: string;
-  proofMode: string;
   snarkDigests?: Record<string, string>;
   compactLedger?: {
     spentNullifierCount?: string;
@@ -114,6 +114,50 @@ export async function settleOnChainIfConfigured(input: {
     contractAddress: status.contractAddress ?? undefined,
     detail: broadcast.detail,
   };
+}
+
+export async function settleOnChainIfConfigured(input: {
+  circuit: string;
+  proofMode: string;
+  snarkDigests?: Record<string, string>;
+  compactLedger?: {
+    spentNullifierCount?: string;
+    transferCount?: string;
+    spentChallengeCount?: string;
+    creditCount?: string;
+  };
+}): Promise<OnChainReceipt> {
+  const cfg = loadConfig();
+  const midnight = requireMidnight();
+  const status = onchainConfigStatus();
+
+  // Keep Compact + SNARK on the hot path. Preprod RPC (wallet rebuild / 60s sync)
+  // made the 2nd+ payment feel stuck — queue it unless on-chain is mandatory.
+  if (!cfg.requireOnchain) {
+    void runBroadcast(input)
+      .then((r) => {
+        if (r.status === "submitted") {
+          console.log(`[circled] Preprod broadcast ok: ${r.txId}`);
+        } else if (r.status === "ready-unfunded") {
+          console.warn(`[circled] Preprod broadcast deferred: ${r.detail}`);
+        }
+      })
+      .catch((e) => {
+        console.warn(
+          "[circled] Preprod broadcast failed:",
+          e instanceof Error ? e.message : e
+        );
+      });
+    return {
+      status: "broadcast-queued",
+      network: midnight.networkId,
+      contractAddress: status.contractAddress ?? undefined,
+      detail:
+        "Compact + Midnight SNARK settled; Preprod broadcast queued in background",
+    };
+  }
+
+  return runBroadcast(input);
 }
 
 export async function deployStatus() {

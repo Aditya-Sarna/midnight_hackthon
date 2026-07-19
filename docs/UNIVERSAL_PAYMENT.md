@@ -1,4 +1,4 @@
-# Circled — Universal (Rail-Agnostic) Payment
+# Circle — Universal (Rail-Agnostic) Payment
 
 One authorization layer above any rail. **Destination is opaque to the circuit.**
 
