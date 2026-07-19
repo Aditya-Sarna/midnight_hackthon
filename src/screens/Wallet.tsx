@@ -922,12 +922,27 @@ export function Wallet({
                   "newContact" in pendingBundle &&
                   pendingBundle.newContact
               )}
+                  proximityAvailable={Boolean(vault)}
               recipientCandidates={recipientCandidates}
               requiresSecondaryConfirm={Boolean(pending?.requiresSecondaryConfirm)}
               onDeny={() => {
                 setVoiceRisk(false);
                 setRecipientCandidates([]);
                 deny();
+              }}
+              onIdentityCancel={() => {
+                setPendingBundle(null);
+                setRecipientCandidates([]);
+                setVoiceRisk(false);
+                setMessage("Try again with a full name or more context");
+                onLiveProofs?.([]);
+                setPhase("app");
+              }}
+              onProximity={() => {
+                setPendingBundle(null);
+                setRecipientCandidates([]);
+                onLiveProofs?.([]);
+                setPhase("contacts");
               }}
               onConfirm={(edits) => void confirmSend(edits)}
             />

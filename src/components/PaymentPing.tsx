@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { formatMoney, getDisplayCurrency, type CurrencyCode } from "../lib/currency";
 import { api, type BrandLookup, type RecipientVerification } from "../lib/api";
 import { defaultUiLocale, isRtlLocale, payCopy, type UiLocale } from "../lib/i18n";
+import { DisambiguationFlow } from "./DisambiguationFlow";
 
 export type PaymentEdits = {
   amount: number;
@@ -24,11 +25,14 @@ type Props = {
   newContact?: boolean;
   /** Recipient is not a known contact — require an explicit identity verification before Accept */
   requireRecipientVerification?: boolean;
+  proximityAvailable?: boolean;
   recipientCandidates?: string[];
   /** Policy T2 / high-value — require second Accept */
   requiresSecondaryConfirm?: boolean;
   onConfirm: (edits: PaymentEdits) => void;
   onDeny: () => void;
+  onIdentityCancel?: () => void;
+  onProximity?: () => void;
 };
 
 /** Modern payment decision sheet — copy follows spoken language */
@@ -42,10 +46,13 @@ export function PaymentPing({
   voiceRisk,
   newContact,
   requireRecipientVerification,
+  proximityAvailable = false,
   recipientCandidates = [],
   requiresSecondaryConfirm,
   onConfirm,
   onDeny,
+  onIdentityCancel,
+  onProximity,
 }: Props) {
   const locale = localeProp || defaultUiLocale();
   const t = useMemo(() => payCopy(locale), [locale]);
@@ -64,7 +71,7 @@ export function PaymentPing({
   const [secondaryArmed, setSecondaryArmed] = useState(false);
   const [verifyState, setVerifyState] = useState<"idle" | "checking" | "done">("idle");
   const [verifyResult, setVerifyResult] = useState<RecipientVerification | null>(null);
-  const [verifyAck, setVerifyAck] = useState(false);
+  const verifyRequestRef = useRef(0);
 
   useEffect(() => {
     const onChange = (e: Event) => setCurrency((e as CustomEvent<CurrencyCode>).detail);
@@ -82,18 +89,35 @@ export function PaymentPing({
   useEffect(() => {
     setVerifyState("idle");
     setVerifyResult(null);
-    setVerifyAck(false);
   }, [editName]);
 
   async function runRecipientVerify(identityId?: string) {
     const name = editName.trim();
     if (!name) return;
+    const requestId = ++verifyRequestRef.current;
     setVerifyState("checking");
     setVerifyResult(null);
     try {
-      const res = await api.verifyRecipient(name, identityId);
-      setVerifyResult(res);
+      const res = await Promise.race([
+        api.verifyRecipient(name, identityId),
+        new Promise<RecipientVerification>((resolve) => {
+          window.setTimeout(
+            () => resolve({
+              ok: true,
+              recipient: name,
+              status: "unverified",
+              basis: "none",
+              label: "No safe match",
+              detail: "No candidate shared enough to confirm within this request.",
+              matches: [],
+            }),
+            4_000
+          );
+        }),
+      ]);
+      if (requestId === verifyRequestRef.current) setVerifyResult(res);
     } catch {
+      if (requestId !== verifyRequestRef.current) return;
       setVerifyResult({
         ok: false,
         recipient: name,
@@ -103,9 +127,14 @@ export function PaymentPing({
         detail: "Could not reach the verification service.",
       });
     } finally {
-      setVerifyState("done");
+      if (requestId === verifyRequestRef.current) setVerifyState("done");
     }
   }
+
+  useEffect(() => {
+    if (!requireRecipientVerification || !editName.trim() || verifyState !== "idle") return;
+    void runRecipientVerify();
+  }, [editName, requireRecipientVerification, verifyState]);
 
   useEffect(() => {
     let alive = true;
@@ -192,12 +221,7 @@ export function PaymentPing({
   // verified or explicitly acknowledge paying an unverified recipient.
   const needsRecipientVerify = Boolean(requireRecipientVerification);
   const recipientVerified = verifyResult?.status === "verified";
-  const recipientAmbiguous = verifyState === "done" && verifyResult?.status === "ambiguous";
-  const recipientUnverified = verifyState === "done" && verifyResult?.status === "unverified";
-  // Ambiguous name (multiple identities) never unlocks — the user must pick one first.
-  const verifyGateBlocks =
-    needsRecipientVerify &&
-    !(recipientVerified || (recipientUnverified && verifyAck));
+  const verifyGateBlocks = needsRecipientVerify && !recipientVerified;
   const blockAccept = (isUnverifiedBrand && !unverifiedAck) || verifyGateBlocks;
   const parsedAmount = Number(editAmount);
   const editsValid =
@@ -219,6 +243,31 @@ export function PaymentPing({
   const candidateChips = recipientCandidates.filter(
     (c) => c.toLowerCase() !== editName.trim().toLowerCase()
   );
+
+  if (needsRecipientVerify && verifyState === "checking") {
+    return (
+      <div className="pay-sheet pay-sheet--verify identity-resolve__loading" role="status">
+        <div className="pay-sheet__spinner" aria-hidden />
+        <p className="pay-sheet__verify-label">Checking who you meant</p>
+        <p className="pay-sheet__verify-sub">Only opted-in hints can appear.</p>
+      </div>
+    );
+  }
+
+  if (needsRecipientVerify && verifyState === "done" && verifyResult && !recipientVerified) {
+    return (
+      <DisambiguationFlow
+        result={verifyResult}
+        busy={busy}
+        proximityAvailable={proximityAvailable}
+        onResolved={(identityId) => void runRecipientVerify(identityId)}
+        onNoMatch={() => setVerifyResult(null)}
+        onProximity={() => onProximity?.()}
+        onRetry={() => (onIdentityCancel ?? onDeny)()}
+        onCancel={onIdentityCancel ?? onDeny}
+      />
+    );
+  }
 
   return (
     <div
@@ -315,124 +364,10 @@ export function PaymentPing({
         </p>
       )}
 
-      {needsRecipientVerify ? (
-        <div
-          className={`pay-verify pay-verify--id ${
-            recipientVerified
-              ? "pay-verify--ok"
-              : recipientUnverified
-                ? "pay-verify--warn"
-                : ""
-          }`}
-        >
-          {verifyState === "idle" && (
-            <>
-              <div className="pay-verify__id-head">
-                <span className="pay-verify__id-mark" aria-hidden>
-                  ?
-                </span>
-                <div>
-                  <strong>Not in your contacts</strong>
-                  <em>Verify who you’re paying before it settles.</em>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="pay-verify__id-btn"
-                disabled={busy || editName.trim().length === 0}
-                onClick={() => void runRecipientVerify()}
-              >
-                Verify {editName.trim() || "recipient"}
-              </button>
-            </>
-          )}
-
-          {verifyState === "checking" && (
-            <div className="pay-verify__id-head">
-              <span className="pay-sheet__spinner pay-verify__id-spin" aria-hidden />
-              <div>
-                <strong>Verifying identity…</strong>
-                <em>Checking registry &amp; KYC</em>
-              </div>
-            </div>
-          )}
-
-          {verifyState === "done" && verifyResult && (
-            <>
-              <div className="pay-verify__id-head">
-                <span
-                  className={`pay-verify__id-mark ${
-                    recipientVerified ? "is-ok" : recipientAmbiguous ? "" : "is-warn"
-                  }`}
-                  aria-hidden
-                >
-                  {recipientVerified ? "✓" : recipientAmbiguous ? "⇅" : "!"}
-                </span>
-                <div>
-                  <strong>{verifyResult.label}</strong>
-                  <em>{verifyResult.detail}</em>
-                </div>
-              </div>
-
-              {recipientAmbiguous && verifyResult.matches && (
-                <ul className="pay-verify__id-list">
-                  {verifyResult.matches.map((m) => (
-                    <li key={m.id}>
-                      <button
-                        type="button"
-                        className="pay-verify__id-pick"
-                        disabled={busy}
-                        onClick={() => void runRecipientVerify(m.id)}
-                      >
-                        <span className="pay-verify__id-pick-main">
-                          <strong>@{m.handle}</strong>
-                          <em>
-                            {m.jurisdiction} · {m.asset} · {m.maskedId}
-                          </em>
-                        </span>
-                        <span
-                          className={`pay-verify__id-tag ${
-                            m.verified ? "is-ok" : "is-warn"
-                          }`}
-                        >
-                          {m.verified ? `KYC ${m.kycStatus}` : "KYC pending"}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {recipientUnverified && (
-                <label className="pay-verify__ack">
-                  <input
-                    type="checkbox"
-                    checked={verifyAck}
-                    onChange={(e) => setVerifyAck(e.target.checked)}
-                  />
-                  <span>I know this recipient — pay anyway</span>
-                </label>
-              )}
-
-              {!recipientVerified && !recipientAmbiguous && (
-                <button
-                  type="button"
-                  className="pay-verify__id-btn pay-verify__id-btn--ghost"
-                  disabled={busy}
-                  onClick={() => void runRecipientVerify()}
-                >
-                  Re-check
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      ) : (
-        newContact && (
-          <p className="pay-sheet__risk" role="status">
-            New contact — Accept saves them on this device for next time.
-          </p>
-        )
+      {!needsRecipientVerify && newContact && (
+        <p className="pay-sheet__risk" role="status">
+          New contact — Accept saves them on this device for next time.
+        </p>
       )}
 
       {requiresSecondaryConfirm && secondaryArmed && (

@@ -1614,6 +1614,191 @@ select:focus {
   color: #c41e3a;
 }
 
+/* Identity resolution is the sole text/list exception to the icon-only UI. */
+.identity-resolve {
+  width: min(100%, 390px);
+  max-height: min(72dvh, 560px);
+  margin: auto;
+  padding: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(20, 18, 15, 0.12);
+  border-radius: 20px;
+  background: #f7f7f5;
+  color: #171715;
+  box-shadow: 0 18px 48px rgba(20, 18, 15, 0.18);
+}
+
+.identity-resolve__header {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.identity-resolve h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.identity-resolve p {
+  margin: 5px 0 0;
+  color: #686864;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.identity-resolve__back {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #e9e9e5;
+  color: #171715;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.identity-resolve__list {
+  max-height: min(48dvh, 360px);
+  margin: 14px -4px 0 0;
+  padding: 0 4px 0 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.identity-resolve__candidate {
+  width: 100%;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 16px;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 6px;
+  border: 0;
+  border-bottom: 1px solid rgba(20, 18, 15, 0.1);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.identity-resolve__candidate:focus-visible {
+  outline: 2px solid #171715;
+  outline-offset: -2px;
+}
+
+.identity-resolve__avatar {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #d9dfd3;
+  font-weight: 750;
+}
+
+.identity-resolve__candidate-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.identity-resolve__candidate-copy strong,
+.identity-resolve__candidate-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.identity-resolve__candidate-copy strong {
+  font-size: 0.9rem;
+}
+
+.identity-resolve__candidate-copy span {
+  color: #71716d;
+  font-size: 0.7rem;
+}
+
+.identity-resolve__chevron {
+  color: #777772;
+  font-size: 1.2rem;
+}
+
+.identity-resolve--empty {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+}
+
+.identity-resolve--empty .identity-resolve__back {
+  justify-self: start;
+}
+
+.identity-resolve__empty-mark {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  margin: 2px 0 10px;
+  border-radius: 50%;
+  background: #e4e4df;
+  font-size: 1.15rem;
+  font-weight: 750;
+}
+
+.identity-resolve__actions {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.identity-resolve__primary,
+.identity-resolve__secondary {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.identity-resolve__primary {
+  margin-top: 16px;
+  border: 0;
+  background: #171715;
+  color: #fff;
+}
+
+.identity-resolve__actions .identity-resolve__primary {
+  margin-top: 0;
+}
+
+.identity-resolve__secondary {
+  border: 1px solid rgba(20, 18, 15, 0.18);
+  background: transparent;
+  color: #171715;
+}
+
+@media (max-width: 420px), (max-height: 640px) {
+  .identity-resolve {
+    width: calc(100% - 20px);
+    max-height: calc(100dvh - 32px);
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .identity-resolve__list {
+    max-height: calc(100dvh - 190px);
+  }
+}
+
 .govt-badge {
   display: inline-flex;
   align-self: flex-start;

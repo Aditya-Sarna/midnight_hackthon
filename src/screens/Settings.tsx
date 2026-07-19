@@ -151,7 +151,7 @@ export function SettingsScreen({
           }}
         >
           Back to menu
-          <span>Real vs demo · Universal · Command center · Guided tour</span>
+          <span>Real vs demo · Universal · Guided tour</span>
         </button>
         <button type="button" className="settings__row settings__row--danger" onClick={onSignOut}>
           Sign out
