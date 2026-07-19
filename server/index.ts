@@ -49,8 +49,10 @@ import { paymentMethodRegistryDocument } from "./services/paymentMethodRegistry.
 import {
   createSandboxAccount,
   listSandboxAccounts,
+  verifySandboxAccount,
 } from "./services/sandboxAccounts.js";
 import {
+  bindUniversalStore,
   createUniversalQuote,
   createUniversalRoute,
   getUniversalPayment,
@@ -228,6 +230,7 @@ console.log(
 );
 
 const store = loadStore();
+bindUniversalStore(store);
 const allowDemoSeed =
   !cfg.isProduction ||
   process.env.NYXPAY_ALLOW_DEMO_SEED === "1" ||
@@ -443,6 +446,24 @@ app.post("/api/universal/sandbox-accounts", (req, res) => {
   }
 });
 
+app.post("/api/universal/sandbox-accounts/:id/verify", (req, res) => {
+  try {
+    const account = verifySandboxAccount(String(req.params.id), {
+      level: String(req.body?.level || "sandbox_verified") as
+        | "sandbox_verified"
+        | "enhanced_verified",
+      walletScreened:
+        req.body?.walletScreened === undefined
+          ? undefined
+          : Boolean(req.body.walletScreened),
+      sanctionsStatus: req.body?.sanctionsStatus,
+    });
+    res.json({ ok: true, account });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : "verify failed" });
+  }
+});
+
 app.get("/api/universal/route-cards", (_req, res) => {
   res.json({ ok: true, cards: listRouteCards() });
 });
@@ -529,7 +550,11 @@ async function handleUniversalSettle(req: Request, res: Response) {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "settle failed";
-    const status = msg.includes("commitment mismatch") ? 409 : 400;
+    const status = msg.includes("commitment mismatch")
+      ? 409
+      : msg.includes("Settle blocked")
+        ? 403
+        : 400;
     res.status(status).json({ error: msg });
   }
 }

@@ -234,3 +234,28 @@ export function resetSandboxPsp() {
   idempotency.clear();
   webhookEvents.clear();
 }
+
+export function exportSandboxPspLedger() {
+  return {
+    ledger: Object.fromEntries(ledger),
+    idempotency: Object.fromEntries(idempotency),
+    webhookEvents: [...webhookEvents],
+  };
+}
+
+export function importSandboxPspLedger(snap: {
+  ledger?: Record<string, unknown>;
+  idempotency?: Record<string, string>;
+  webhookEvents?: string[];
+}) {
+  ledger.clear();
+  idempotency.clear();
+  webhookEvents.clear();
+  for (const [k, v] of Object.entries(snap.ledger || {})) {
+    ledger.set(k, v as PspEntry);
+  }
+  for (const [k, v] of Object.entries(snap.idempotency || {})) {
+    idempotency.set(k, v);
+  }
+  for (const e of snap.webhookEvents || []) webhookEvents.add(e);
+}

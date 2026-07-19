@@ -173,6 +173,11 @@ export interface Store {
   }[];
   /** Durable P2P payment lifecycle (privacy-safe metadata) */
   paymentLifecycle?: import("./paymentLifecycle.js").PaymentLifecycleRecord[];
+  /**
+   * Universal adapter durable bucket (quotes/routes/payments/metrics/accounts/rail ledgers).
+   * Additive on schema v4 — survives process restart for capped pilot.
+   */
+  universal?: import("./universalPersist.js").UniversalPersistBucket;
 }
 
 function emptyStore(): Store {

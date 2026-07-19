@@ -63,7 +63,8 @@ npm run judge   # then follow JUDGE.md
 - [ ] Sandbox PSP enabled (`sandbox_psp` HMAC webhook) for source debit leg
 - [ ] `KYC_PROVIDER=onfido_shaped` (shaped issuer — not live DigiLocker; required by strict boot)
 - [ ] KYC/sanctions clear for Maya/Arjun (`GET /api/universal/sandbox-accounts`)
-- [ ] Route compliance before settle (`INR→USD` challenge / `INR→BTC` enhanced KYC)
+- [ ] **Hard** route compliance on settle (`403 Settle blocked` if uncleared; verify via `POST …/sandbox-accounts/:id/verify`)
+- [ ] Durable `store.universal` — receipts/rails survive restart (`ops.persisted: true`)
 - [ ] Strict ZK: `NYXPAY_REQUIRE_ZK_PROVE=1` + proof-server healthy
 - [ ] Universal settle runs **rail adapters** (source → FX → Stripe TEST target) after ZK prove
 - [ ] Recon gap count = 0 (`GET /api/ops/universal` → `metrics.pendingReconciliation`)
@@ -71,10 +72,12 @@ npm run judge   # then follow JUDGE.md
 - [ ] Reconcile endpoint (`POST /api/universal/reconcile`)
 - [ ] Ops: `GET /api/ops/universal` shows `stripeTest.mode` + sandbox_psp
 - [ ] Tamper-route rejection (route commitment mismatch)
+- [ ] Quote single-use after settle
 - [ ] Disputes / manual_review support path
 - [ ] Privacy/Terms explain rails + conversion
 - [ ] E2E: `npm run test:e2e` (+ optional `npm run test:e2e:playwright`)
 - [ ] Boot: `npm run start:prod` (local Stripe ledger) or `start:prod:stripe` with `sk_test_`
+- [ ] Rehearsal: `npm run judge:smoke` settles Maya ₹5000 with `zk-proved` + tamper 409
 
 ## Explicit non-goals for v1 pilot (cannot fake a 10/10 with code alone)
 

@@ -9,6 +9,8 @@ Map every demo claim to code. Judges can verify bold claims in under two minutes
 | Universal demo UI | `src/screens/UniversalAdapterDemo.tsx` |
 | Judge command center | `src/screens/JudgeCommandCenter.tsx` → `GET /api/judge/command-center` |
 | Sandbox accounts (Maya/Arjun) | `server/services/sandboxAccounts.ts` → `GET /api/universal/sandbox-accounts` |
+| Durable universal store | `store.universal` via `universalPersist.ts` + `bindUniversalStore` |
+| Hard compliance on settle | `assertSettleCompliance` → `403 Settle blocked` until `…/verify` |
 | Quote / route / settle | `server/services/universalService.ts` → `POST /api/universal/{quote,route,sandbox-settle}` |
 | Quote engine | `server/services/quoteEngine.ts` |
 | Route planner | `server/services/routePlanner.ts` |

@@ -6736,6 +6736,13 @@ select:focus {
   max-width: 36rem;
 }
 
+.uni-stage__routeproof summary {
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin-bottom: 0.4rem;
+}
+
 .uni-stage__routeproof h3 {
   margin: 0 0 0.4rem;
   font-size: 0.95rem;

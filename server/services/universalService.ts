@@ -1,6 +1,6 @@
 /**
  * Universal adapter platform — quote → route → bind → settle → reconcile.
- * Backend owns conversion; frontend only confirms.
+ * Backend owns conversion; frontend only confirms. State persists on Store.universal.
  */
 import { randomNonce, sha256 } from "./crypto.js";
 import { listAssets } from "./assetRegistry.js";
@@ -11,7 +11,15 @@ import {
   type UniversalQuote,
 } from "./quoteEngine.js";
 import { planUniversalRoute, type RoutePlan } from "./routePlanner.js";
-import { getSandboxAccount, listSandboxAccounts } from "./sandboxAccounts.js";
+import {
+  accountClearedForChallenge,
+  accountClearedForEnhanced,
+  bindSandboxAccountsPersist,
+  getSandboxAccount,
+  hydrateSandboxAccounts,
+  listSandboxAccounts,
+  type SandboxAccount,
+} from "./sandboxAccounts.js";
 import { attestUniversalRouteBinding, resolveProofMode } from "./proofServer.js";
 import { settleMetricsView } from "./observability.js";
 import {
@@ -19,58 +27,29 @@ import {
   buildUniversalSettleRequest,
   resolveUniversalRailId,
 } from "./universalRails.js";
-import { stripeTestMode, stripeTestOpsSnapshot } from "../txAuth/rails/stripeTest.js";
+import {
+  exportStripeTestLedger,
+  importStripeTestLedger,
+  stripeTestMode,
+  stripeTestOpsSnapshot,
+} from "../txAuth/rails/stripeTest.js";
+import {
+  exportSandboxPspLedger,
+  importSandboxPspLedger,
+} from "../txAuth/rails/sandboxPsp.js";
+import type { Store } from "./store.js";
+import { saveStore } from "./store.js";
+import type {
+  RouteComplianceDecision,
+  StoredQuotePersist,
+  StoredRoutePersist,
+  UniversalPaymentRecord,
+} from "./universalPersist.js";
 
-export type RouteComplianceDecision =
-  | "allow"
-  | "challenge"
-  | "deny"
-  | "manual_review"
-  | "enhanced_kyc_required"
-  | "selective_disclosure_required";
+export type { RouteComplianceDecision, UniversalPaymentRecord };
 
-export type UniversalPaymentRecord = {
-  id: string;
-  quoteId: string;
-  routeId: string;
-  routeCommitment: string;
-  intentCommitment: string;
-  sourceAsset: string;
-  targetAsset: string;
-  sourceAdapter: string;
-  conversionAdapter?: string;
-  targetAdapter: string;
-  sourceSettlementId?: string;
-  conversionSettlementId?: string;
-  targetSettlementId?: string;
-  receiptId: string;
-  lifecycleState: string;
-  riskDecision: RouteComplianceDecision;
-  proofMode?: string;
-  attestationGrade?: string;
-  circuit?: string;
-  snarkDigest?: string;
-  bindingDigest?: string;
-  proveMs?: number;
-  reconciliationGaps: string[];
-  createdAt: number;
-  updatedAt: number;
-  timeline: Array<{ at: number; state: string; note?: string }>;
-};
-
-type StoredQuote = UniversalQuote & {
-  intent: UniversalPaymentIntent;
-  accountId: string;
-  createdAt: number;
-};
-
-type StoredRoute = RoutePlan & {
-  intent: UniversalPaymentIntent;
-  accountId: string;
-  routeCommitment: string;
-  compliance: RouteComplianceDecision;
-  createdAt: number;
-};
+type StoredQuote = StoredQuotePersist;
+type StoredRoute = StoredRoutePersist;
 
 const quotes = new Map<string, StoredQuote>();
 const routes = new Map<string, StoredRoute>();
@@ -86,6 +65,74 @@ const metrics = {
   sanctionsBlocks: 0,
   tamperRejects: 0,
 };
+
+let boundStore: Store | null = null;
+
+function persistUniversal() {
+  if (!boundStore) return;
+  boundStore.universal = {
+    quotes: Object.fromEntries(quotes),
+    routes: Object.fromEntries(routes),
+    payments: Object.fromEntries(payments),
+    metrics: { ...metrics },
+    sandboxAccounts: listSandboxAccounts().map((a) => ({ ...a })),
+    stripeLedger: exportStripeTestLedger(),
+    sandboxPspLedger: exportSandboxPspLedger(),
+  };
+  saveStore(boundStore);
+}
+
+export function bindUniversalStore(store: Store) {
+  boundStore = store;
+  bindSandboxAccountsPersist(() => persistUniversal());
+  const bucket = store.universal;
+  if (bucket) {
+    quotes.clear();
+    routes.clear();
+    payments.clear();
+    for (const [k, v] of Object.entries(bucket.quotes || {})) quotes.set(k, v);
+    for (const [k, v] of Object.entries(bucket.routes || {})) routes.set(k, v);
+    for (const [k, v] of Object.entries(bucket.payments || {})) payments.set(k, v);
+    Object.assign(metrics, bucket.metrics || {});
+    hydrateSandboxAccounts(bucket.sandboxAccounts);
+    if (bucket.stripeLedger) importStripeTestLedger(bucket.stripeLedger);
+    if (bucket.sandboxPspLedger) importSandboxPspLedger(bucket.sandboxPspLedger);
+  } else {
+    hydrateSandboxAccounts(undefined);
+  }
+}
+
+/** Hard compliance: challenge / enhanced / deny block settle unless account is cleared. */
+export function assertSettleCompliance(
+  intent: UniversalPaymentIntent,
+  account: SandboxAccount
+): RouteComplianceDecision {
+  if (account.sanctionsStatus !== "clear") {
+    metrics.sanctionsBlocks += 1;
+    throw new Error("Settle blocked: sanctions");
+  }
+  const { decision, reasons } = evaluateRouteCompliance(intent);
+  if (decision === "deny" || decision === "manual_review") {
+    metrics.riskHolds += 1;
+    throw new Error(`Settle blocked: ${decision} (${reasons.join(",")})`);
+  }
+  if (
+    (decision === "challenge" || decision === "selective_disclosure_required") &&
+    !accountClearedForChallenge(account)
+  ) {
+    metrics.riskHolds += 1;
+    throw new Error(
+      `Settle blocked: ${decision} — KYC required (${reasons.join(",")})`
+    );
+  }
+  if (decision === "enhanced_kyc_required" && !accountClearedForEnhanced(account)) {
+    metrics.riskHolds += 1;
+    throw new Error(
+      `Settle blocked: enhanced_kyc_required — KYC + wallet screening (${reasons.join(",")})`
+    );
+  }
+  return decision;
+}
 
 export function routeCommitmentOf(plan: RoutePlan, intent: UniversalPaymentIntent): string {
   return sha256(
@@ -165,6 +212,7 @@ export function createUniversalQuote(input: {
     createdAt: Date.now(),
   });
   metrics.quotes += 1;
+  persistUniversal();
   return { quote, intent, accountId: account.id };
 }
 
@@ -176,9 +224,17 @@ export function createUniversalRoute(input: {
   if (Date.now() > stored.expiresAt) throw new Error("quote expired");
   const intent = stored.intent;
   const compliance = evaluateRouteCompliance(intent);
-  if (compliance.decision === "deny") {
+  if (compliance.decision === "deny" || compliance.decision === "manual_review") {
     metrics.riskHolds += 1;
-    throw new Error(`Route denied: ${compliance.reasons.join(",")}`);
+    throw new Error(`Route denied: ${compliance.decision} (${compliance.reasons.join(",")})`);
+  }
+  const account = getSandboxAccount(stored.accountId);
+  if (!account) throw new Error("sandbox account not found");
+  // Soft preview on route: still create, but encode uncleared status for UI
+  try {
+    assertSettleCompliance(intent, account);
+  } catch {
+    // Route may still be planned for judge demo of binding; settle will hard-block.
   }
   const quoteOnly: UniversalQuote = {
     quoteId: stored.quoteId,
@@ -204,6 +260,7 @@ export function createUniversalRoute(input: {
   };
   routes.set(route.routeId, route);
   metrics.routes += 1;
+  persistUniversal();
   return {
     route,
     binding: {
@@ -240,6 +297,12 @@ export async function settleUniversal(input: {
     metrics.tamperRejects += 1;
     throw new Error("route commitment mismatch");
   }
+
+  const account = getSandboxAccount(route.accountId);
+  if (!account) throw new Error("sandbox account not found");
+  // Hard compliance gate — before proof / rails
+  const complianceDecision = assertSettleCompliance(route.intent, account);
+  route.compliance = complianceDecision;
 
   const intentCommitment = sha256(
     [
@@ -392,7 +455,7 @@ export async function settleUniversal(input: {
     targetSettlementId,
     receiptId,
     lifecycleState: reconciled ? "reconciled" : "settled",
-    riskDecision: route.compliance,
+    riskDecision: complianceDecision,
     proofMode: mode.mode,
     attestationGrade: attest.grade,
     circuit: attest.circuit,
@@ -421,7 +484,10 @@ export async function settleUniversal(input: {
     ],
   };
   payments.set(id, rec);
+  // Single-use quote after settle
+  quotes.delete(route.quote.quoteId);
   metrics.settled += 1;
+  persistUniversal();
   return rec;
 }
 
@@ -458,6 +524,7 @@ export async function reconcileUniversalPayment(
     rec.lifecycleState = "reconciled";
     rec.timeline.push({ at: rec.updatedAt, state: "reconciled", note: "gaps cleared" });
   }
+  persistUniversal();
   return rec;
 }
 
@@ -477,6 +544,7 @@ export async function refundUniversal(paymentId: string): Promise<UniversalPayme
       if (!r.ok) {
         rec.reconciliationGaps = [...rec.reconciliationGaps, "refund_pending"];
         rec.lifecycleState = "manual_review";
+        persistUniversal();
         return rec;
       }
     }
@@ -502,6 +570,7 @@ export async function refundUniversal(paymentId: string): Promise<UniversalPayme
     note: notes.join(" · ") || "rails refunded",
   });
   metrics.refunds += 1;
+  persistUniversal();
   return rec;
 }
 
@@ -560,6 +629,7 @@ export async function universalOpsDashboard() {
   const stripe = stripeTestOpsSnapshot();
   return {
     ok: true,
+    persisted: Boolean(boundStore?.universal || boundStore),
     metrics: {
       ...metrics,
       pendingReconciliation: [...payments.values()].filter((p) =>
@@ -654,6 +724,29 @@ export function resetUniversalService() {
   metrics.riskHolds = 0;
   metrics.sanctionsBlocks = 0;
   metrics.tamperRejects = 0;
+  if (boundStore) {
+    boundStore.universal = undefined;
+    saveStore(boundStore);
+  }
+}
+
+/** Test helper: clear in-memory Maps then re-hydrate from bound Store (simulates restart). */
+export function simulateUniversalRestart() {
+  if (!boundStore) throw new Error("no bound store");
+  // Flush current memory into store first
+  persistUniversal();
+  quotes.clear();
+  routes.clear();
+  payments.clear();
+  metrics.quotes = 0;
+  metrics.routes = 0;
+  metrics.settled = 0;
+  metrics.failed = 0;
+  metrics.refunds = 0;
+  metrics.riskHolds = 0;
+  metrics.sanctionsBlocks = 0;
+  metrics.tamperRejects = 0;
+  bindUniversalStore(boundStore);
 }
 
 export function getStoredRoute(routeId: string) {

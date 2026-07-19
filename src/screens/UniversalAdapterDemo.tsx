@@ -495,57 +495,30 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
     <div className="uni-stage fade-in">
       <header className="uni-stage__head">
         <div>
-          <p className="atelier-kicker">Universal adapter · user-led</p>
           <h1 className="brand-mark">Circle</h1>
-          <p>
-            Speak a payment on the real Circle home. Midnight proves the route binding
-            (zk-proved), then Stripe test credits the other phone.
-          </p>
+          <p>INR → preferred asset. Speak or run the judge demo.</p>
         </div>
         <button type="button" className="btn ghost" onClick={onBack}>
           Menu
         </button>
       </header>
 
-      <ol className="uni-stage__howto">
-        <li>
-          Or click <strong>Run judge demo</strong> — Maya · ₹5000 · quote → route → settle.
-        </li>
-        <li>
-          Left phone: tap Circle and <strong>speak</strong> — e.g. “Send 5000 to Maya”.
-        </li>
-        <li>
-          Accept → Compact route bind + proof-server SNARK, then Stripe test settle.
-        </li>
-        <li>
-          Click <strong>Try tamper route</strong> — must reject with route commitment mismatch.
-        </li>
-      </ol>
-
-      <aside className="uni-stage__routeproof" aria-label="RouteProof binds">
-        <h3>RouteProof binds</h3>
+      <details className="uni-stage__routeproof">
+        <summary>RouteProof · binds + tamper</summary>
         <ul>
-          <li>sender</li>
-          <li>receiver</li>
-          <li>source asset</li>
-          <li>target asset</li>
-          <li>quoteId</li>
-          <li>routeId</li>
-          <li>expiry</li>
-          <li>acceptance preference</li>
+          <li>sender · receiver · source/target asset</li>
+          <li>quoteId · routeId · expiry · acceptance</li>
         </ul>
         <p className="uni-stage__routeproof-result">
-          Tamper attempt: USD route → BTC route
-          <br />
-          Result:{" "}
+          Tamper: USD → BTC ·{" "}
           {tamperMsg
             ? tamperMsg.toLowerCase().includes("rejected") ||
               tamperMsg.toLowerCase().includes("mismatch")
               ? "rejected"
               : tamperMsg
-            : "— (run Try tamper route)"}
+            : "run Try tamper route"}
         </p>
-      </aside>
+      </details>
 
       <div className="uni-stage__receivers" role="tablist" aria-label="Receiver">
         {accounts.map((a) => (

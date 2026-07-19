@@ -2,19 +2,28 @@ import { beforeEach, describe, expect, it } from "vitest";
 import "./test/mocks.js";
 import { useServerHarness } from "./test/harness.js";
 import {
+  bindUniversalStore,
   createUniversalQuote,
   createUniversalRoute,
+  getUniversalPayment,
   resetUniversalService,
   settleUniversal,
+  simulateUniversalRestart,
 } from "./services/universalService.js";
-import { resetSandboxAccounts } from "./services/sandboxAccounts.js";
+import {
+  resetSandboxAccounts,
+  setSandboxAccountKyc,
+} from "./services/sandboxAccounts.js";
 
 describe("universal adapter platform", () => {
   const harness = useServerHarness();
 
   beforeEach(() => {
+    // Bind the in-process Maps to the harness store (survives resetModules isolation).
+    bindUniversalStore(harness.store);
     resetUniversalService();
     resetSandboxAccounts();
+    bindUniversalStore(harness.store);
   });
 
   it("lists assets, methods, sandbox accounts, route cards", async () => {
@@ -179,9 +188,141 @@ describe("universal adapter platform", () => {
       fetch(`${harness.baseUrl}/api/judge/command-center`).then((r) => r.json()),
     ]);
     expect(ops.metrics.settled).toBeGreaterThanOrEqual(1);
+    expect(ops.persisted).toBe(true);
     expect(judge.ok).toBe(true);
     expect(judge.compact.circuits.length).toBeGreaterThan(0);
     const blob = JSON.stringify({ ops, judge });
     expect(blob).not.toMatch(/bc1q|4821|voice transcript|privateKey/i);
+  });
+
+  it("hard-blocks settle when KYC uncleared (INR → USD challenge)", async () => {
+    setSandboxAccountKyc("acct_maya_usd", { kycStatus: "unverified" });
+    const { quote } = createUniversalQuote({
+      accountId: "acct_maya_usd",
+      amount: "5000",
+    });
+    const { route } = createUniversalRoute({ quoteId: quote.quoteId });
+    await expect(
+      settleUniversal({
+        quoteId: quote.quoteId,
+        routeId: route.routeId,
+        routeCommitment: route.routeCommitment,
+      })
+    ).rejects.toThrow(/Settle blocked: challenge/i);
+
+    setSandboxAccountKyc("acct_maya_usd", { kycStatus: "sandbox_verified" });
+    const payment = await settleUniversal({
+      quoteId: quote.quoteId,
+      routeId: route.routeId,
+      routeCommitment: route.routeCommitment,
+    });
+    expect(payment.lifecycleState).toMatch(/reconciled|settled/);
+  });
+
+  it("verify API clears KYC for uncleared sandbox account", async () => {
+    const created = await fetch(`${harness.baseUrl}/api/universal/sandbox-accounts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ displayName: "Pilot User", preferredAsset: "USD" }),
+    }).then((r) => r.json());
+    expect(created.account.kycStatus).toBe("unverified");
+
+    const blocked = await fetch(`${harness.baseUrl}/api/universal/quote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId: created.account.id, amount: "1000" }),
+    }).then(async (r) => {
+      const quote = await r.json();
+      const route = await fetch(`${harness.baseUrl}/api/universal/route`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quoteId: quote.quoteId }),
+      }).then((rr) => rr.json());
+      const settle = await fetch(`${harness.baseUrl}/api/universal/sandbox-settle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          quoteId: quote.quoteId,
+          routeId: route.routeId,
+          routeCommitment: route.routeCommitment,
+        }),
+      });
+      return settle;
+    });
+    expect(blocked.status).toBe(403);
+
+    const verify = await fetch(
+      `${harness.baseUrl}/api/universal/sandbox-accounts/${created.account.id}/verify`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level: "sandbox_verified" }),
+      }
+    );
+    expect(verify.status).toBe(200);
+
+    const quote2 = await fetch(`${harness.baseUrl}/api/universal/quote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId: created.account.id, amount: "1000" }),
+    }).then((r) => r.json());
+    const route2 = await fetch(`${harness.baseUrl}/api/universal/route`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ quoteId: quote2.quoteId }),
+    }).then((r) => r.json());
+    const settle2 = await fetch(`${harness.baseUrl}/api/universal/sandbox-settle`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        quoteId: quote2.quoteId,
+        routeId: route2.routeId,
+        routeCommitment: route2.routeCommitment,
+      }),
+    });
+    expect(settle2.status).toBe(200);
+  });
+
+  it("survives simulated restart — receipt + stripe ledger still present", async () => {
+    const { quote } = createUniversalQuote({
+      accountId: "acct_maya_usd",
+      amount: "2500",
+    });
+    const { route } = createUniversalRoute({ quoteId: quote.quoteId });
+    const payment = await settleUniversal({
+      quoteId: quote.quoteId,
+      routeId: route.routeId,
+      routeCommitment: route.routeCommitment,
+    });
+    const receiptId = payment.receiptId;
+    const targetSettlementId = payment.targetSettlementId;
+    const paymentId = payment.id;
+
+    expect(harness.store.universal?.payments?.[paymentId]?.receiptId).toBe(receiptId);
+
+    simulateUniversalRestart();
+
+    const restored = getUniversalPayment(receiptId);
+    expect(restored?.receiptId).toBe(receiptId);
+    expect(restored?.targetSettlementId).toBe(targetSettlementId);
+    expect(restored?.lifecycleState).toMatch(/reconciled|settled/);
+    expect(harness.store.universal?.stripeLedger?.ledger).toBeTruthy();
+    expect(
+      Object.keys(harness.store.universal?.stripeLedger?.ledger || {}).length
+    ).toBeGreaterThan(0);
+  });
+
+  it("rejects reusing a quote after settle", async () => {
+    const { quote } = createUniversalQuote({
+      accountId: "acct_maya_usd",
+      amount: "800",
+    });
+    const { route } = createUniversalRoute({ quoteId: quote.quoteId });
+    await settleUniversal({
+      quoteId: quote.quoteId,
+      routeId: route.routeId,
+      routeCommitment: route.routeCommitment,
+    });
+    expect(() => createUniversalRoute({ quoteId: quote.quoteId })).toThrow(/quote not found/i);
   });
 });

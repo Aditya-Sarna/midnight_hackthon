@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Glyph } from "./Glyph";
-import { saveSession, type PublicUser } from "../lib/api";
+import { api, saveSession, type PublicUser } from "../lib/api";
 import { publicUserFromVault } from "../lib/offlineUser";
 import { disableDemoMode } from "../lib/productMode";
 import { isRecoveryKit, restoreFromRecoveryKit } from "../lib/recoveryKit";
@@ -10,6 +10,7 @@ type Props = {
   onCreateAccount: () => void;
   onBackToMenu?: () => void;
   onRestored?: (user: PublicUser) => void;
+  onBackendOk?: (ok: boolean) => void;
 };
 
 export function ProductGate({
@@ -17,12 +18,31 @@ export function ProductGate({
   onCreateAccount,
   onBackToMenu,
   onRestored,
+  onBackendOk,
 }: Props) {
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [kitText, setKitText] = useState("");
   const [pass, setPass] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        await api.health();
+        if (!alive) return;
+        onBackendOk?.(true);
+      } catch {
+        if (!alive) return;
+        onBackendOk?.(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // Re-probe when parent thought API was down (stale false from cold start).
+  }, [backendOk, onBackendOk]);
 
   async function restore() {
     setBusy(true);
@@ -42,6 +62,22 @@ export function ProductGate({
     }
   }
 
+  async function create() {
+    setError("");
+    setBusy(true);
+    try {
+      await api.health();
+      onBackendOk?.(true);
+      disableDemoMode();
+      onCreateAccount();
+    } catch {
+      onBackendOk?.(false);
+      setError("API not reachable on this page — start with npm run judge (or npm run dev).");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="product-gate">
       <div className="product-gate__glow" aria-hidden />
@@ -53,23 +89,13 @@ export function ProductGate({
           only sees proofs. Browser speech may use cloud STT — payment secrets do not.
         </p>
 
-        {backendOk === false && (
-          <p className="error product-gate__warn">
-            Backend unreachable. You can still restore a recovery kit offline; create account needs
-            the API.
-          </p>
-        )}
-
         {!restoreOpen ? (
           <div className="product-gate__actions">
             <button
               type="button"
               className="btn primary"
-              disabled={backendOk === false}
-              onClick={() => {
-                disableDemoMode();
-                onCreateAccount();
-              }}
+              disabled={busy}
+              onClick={() => void create()}
             >
               Create account
             </button>
@@ -88,6 +114,7 @@ export function ProductGate({
                 Back to menu
               </button>
             )}
+            {error && <p className="error">{error}</p>}
           </div>
         ) : (
           <div className="product-gate__actions" style={{ textAlign: "left" }}>

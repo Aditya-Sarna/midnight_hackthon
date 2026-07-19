@@ -65,7 +65,6 @@ export default function App() {
   const [vaultSnapshot, setVaultSnapshot] = useState<DeviceVaultState | null>(null);
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
   const [loadDetail, setLoadDetail] = useState("Opening Circle…");
-  const [settledOnce, setSettledOnce] = useState(false);
   const [lastSettleGrade, setLastSettleGrade] = useState("");
   const [proofMode, setProofMode] = useState("—");
   const [proofServerOk, setProofServerOk] = useState<boolean | null>(null);
@@ -82,7 +81,6 @@ export default function App() {
   const [systemsHistory, setSystemsHistory] = useState<SystemsEvent[]>([]);
   const [systemsCurrent, setSystemsCurrent] = useState<SystemsEvent | null>(null);
   const [systemsOpen, setSystemsOpen] = useState(false);
-  const [proofStrip, setProofStrip] = useState("");
   const [demoMode, setDemoMode] = useState(() => isDemoMode());
   const [booted, setBooted] = useState(false);
 
@@ -193,19 +191,11 @@ export default function App() {
         const mode = String(h.proofMode?.mode ?? "—");
         setProofServerOk(ok);
         setProofMode(mode);
-        setProofStrip(
-          ok
-            ? `proofMode: ${mode} · SNARK`
-            : mode === "compact-runtime"
-              ? `proofMode: ${mode} · need proof-server for zk-proved`
-              : `proofMode: ${mode}`
-        );
       } catch {
         if (alive) {
           setBackendOk(false);
           setProofServerOk(false);
           setProofMode("offline");
-          setProofStrip("Backend offline");
         }
       }
     };
@@ -273,7 +263,6 @@ export default function App() {
     setLiveProofs([]);
     setSystemsHistory([]);
     setSystemsCurrent(null);
-    setSettledOnce(false);
     setGuided(false);
     setGuideCommand(null);
     setTheaterFocus(null);
@@ -354,14 +343,8 @@ export default function App() {
       ? "app__main app__main--stage app__main--with-systems"
       : "app__main app__main--with-systems";
 
-  const showSystemsDock =
-    demoMode &&
-    view !== "intro" &&
-    view !== "welcome" &&
-    view !== "menu" &&
-    view !== "loading" &&
-    view !== "gate" &&
-    view !== "truth";
+  // Systems dock only on guided tour — keep Universal / Command center chrome clean.
+  const showSystemsDock = demoMode && guided && view === "wallet";
 
   const systemsPanel = showSystemsDock ? (
     <SystemsTheater
@@ -390,6 +373,7 @@ export default function App() {
     return (
       <ProductGate
         backendOk={backendOk}
+        onBackendOk={setBackendOk}
         onCreateAccount={() => {
           disableDemoMode();
           setDemoMode(false);
@@ -449,59 +433,9 @@ export default function App() {
       <header className="app__brand">
         <img src="/glyph.png" alt="" className="app__brand-glyph" />
         <div className="app__brand-copy">
-          <p className="atelier-kicker">
-            {guided
-              ? "Judge stage · guided · SNARK path"
-              : demoMode
-                ? "Showcase · Midnight"
-                : "Midnight · confidential voice"}
-          </p>
           <strong className="brand-mark">Circle</strong>
-          <span>
-            {guided ? "Private money, spoken softly" : "Confidential voice payments"}
-          </span>
+          <span>Confidential voice payments</span>
         </div>
-        {backendOk === false && <em className="pill warn">backend offline</em>}
-        {backendOk && <em className="pill ok">systems live</em>}
-        {proofStrip && (
-          <em
-            className={`pill${
-              proofServerOk || proofStrip.includes("SNARK") ? " ok" : " warn"
-            }`}
-            title="Live Compact / proof-server mode"
-          >
-            {proofStrip}
-          </em>
-        )}
-        {lastSettleGrade && (
-          <em
-            className={`pill${lastSettleGrade === "zk-proved" ? " ok" : " warn"}`}
-            title="Last settlement attestation grade"
-          >
-            grade: {lastSettleGrade}
-          </em>
-        )}
-        {settledOnce && !lastSettleGrade && <em className="pill ok">settlement proven</em>}
-        {demoMode && guided && view === "wallet" && (
-          <button
-            type="button"
-            className="pill"
-            style={{ cursor: "pointer" }}
-            onClick={() => setGuided(false)}
-          >
-            Hide guide
-          </button>
-        )}
-        {demoMode && !guided && view === "wallet" && user && (
-          <button
-            type="button"
-            className="pill"
-            style={{ cursor: "pointer" }}
-            onClick={() => setGuided(true)}
-          >
-            Show guide
-          </button>
-        )}
         <button
           type="button"
           className="pill"
@@ -509,17 +443,17 @@ export default function App() {
           onClick={() => {
             setDirectorAuto(null);
             setGuided(false);
-            if (!demoMode) {
-              setSystemsOpen(false);
-            }
+            setSystemsOpen(false);
             setView("menu");
           }}
         >
           Menu
         </button>
-        <button type="button" className="pill" style={{ cursor: "pointer" }} onClick={handleSignOut}>
-          Sign out
-        </button>
+        {user && (
+          <button type="button" className="pill" style={{ cursor: "pointer" }} onClick={handleSignOut}>
+            Sign out
+          </button>
+        )}
       </header>
 
       {view === "merchant" && (
@@ -756,7 +690,6 @@ export default function App() {
                   if (demoMode) pushSystems(narrativeForWalletPhase(phase, meta));
                 }}
                 onSettled={(grade, meta) => {
-                  setSettledOnce(true);
                   if (grade) setLastSettleGrade(grade);
                   setTheaterKey((k) => k + 1);
                   void loadVault(user.id).then(setVaultSnapshot);
