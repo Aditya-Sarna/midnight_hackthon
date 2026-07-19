@@ -426,35 +426,48 @@ export default function App() {
     return <BootLoading detail={loadDetail} />;
   }
 
+  const immersiveStage = view === "universal" || view === "judge";
+
   return (
-    <div className={`app app--atelier ${systemsOpen && showSystemsDock ? "app--systems-open" : ""}`}>
+    <div
+      className={`app app--atelier ${systemsOpen && showSystemsDock ? "app--systems-open" : ""} ${
+        immersiveStage ? "app--immersive" : ""
+      }`}
+    >
       <InstallPrompt />
       {systemsTab}
-      <header className="app__brand">
-        <img src="/glyph.png" alt="" className="app__brand-glyph" />
-        <div className="app__brand-copy">
-          <strong className="brand-mark">Circle</strong>
-          <span>Confidential voice payments</span>
-        </div>
-        <button
-          type="button"
-          className="pill"
-          style={{ cursor: "pointer" }}
-          onClick={() => {
-            setDirectorAuto(null);
-            setGuided(false);
-            setSystemsOpen(false);
-            setView("menu");
-          }}
-        >
-          Menu
-        </button>
-        {user && (
-          <button type="button" className="pill" style={{ cursor: "pointer" }} onClick={handleSignOut}>
-            Sign out
+      {!immersiveStage && (
+        <header className="app__brand">
+          <img src="/glyph.png" alt="" className="app__brand-glyph" />
+          <div className="app__brand-copy">
+            <strong className="brand-mark">Circle</strong>
+            <span>Private voice agentic payments on Midnight</span>
+          </div>
+          <button
+            type="button"
+            className="pill"
+            style={{ cursor: "pointer" }}
+            onClick={() => {
+              setDirectorAuto(null);
+              setGuided(false);
+              setSystemsOpen(false);
+              setView("menu");
+            }}
+          >
+            Menu
           </button>
-        )}
-      </header>
+          {user && (
+            <button
+              type="button"
+              className="pill"
+              style={{ cursor: "pointer" }}
+              onClick={handleSignOut}
+            >
+              Sign out
+            </button>
+          )}
+        </header>
+      )}
 
       {view === "merchant" && (
         <main className={stageClass}>

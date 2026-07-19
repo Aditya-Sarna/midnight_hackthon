@@ -78,4 +78,4 @@ curl -s http://127.0.0.1:8787/api/health | python3 -m json.tool
 
 ## Brand
 
-**Circle** — private voice payments on Midnight. Distinct from Circle Internet Financial / USDC.
+**Circle** — private voice agentic payments on Midnight. Distinct from Circle Internet Financial / USDC.

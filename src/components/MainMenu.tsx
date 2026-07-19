@@ -118,8 +118,8 @@ export function MainMenu({ onSelect }: Props) {
           <p className="main-menu__kicker">Midnight · Circle</p>
           <h1 className="main-menu__title">Circle</h1>
           <p className="main-menu__lede">
-            Private authorization on Midnight. Speak a payment — prove the route, settle on the
-            rail the receiver accepts.
+            Private voice agentic payments on Midnight. Speak a payment — prove the route, settle
+            on the rail the receiver accepts.
           </p>
         </header>
 

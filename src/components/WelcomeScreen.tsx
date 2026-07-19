@@ -54,7 +54,7 @@ const SCREENS: Screen[] = [
     lines: [
       { text: "Introducing", size: "small" },
       { text: "CIRCLE", size: "huge" },
-      { text: "Private payments on Midnight.", size: "tag" },
+      { text: "Private voice agentic payments on Midnight.", size: "tag" },
     ],
   },
 ];

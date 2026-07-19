@@ -28,6 +28,7 @@ type Activity = {
 type Phase = "home" | "listening" | "ping" | "settling" | "settled" | "error";
 
 const SENDER_INR = 25_000;
+const SENDER_NAME = "Aditya";
 const APPS = [
   { name: "Phone", hue: "#34c759" },
   { name: "Mail", hue: "#3a3a3c" },
@@ -173,12 +174,15 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
     circuit?: string;
     snarkDigest?: string;
     proveMs?: number;
+    refunded?: boolean;
   } | null>(null);
-  const [tamperMsg, setTamperMsg] = useState("");
-  const [lastRoute, setLastRoute] = useState<{
-    quoteId: string;
-    routeId: string;
-    routeCommitment: string;
+  const [tamperState, setTamperState] = useState<"idle" | "running" | "blocked">("idle");
+  const [refundRequest, setRefundRequest] = useState<{
+    inr: number;
+    targetAmt: number;
+    targetAsset: string;
+    fromName: string;
+    status: "pending" | "processing";
   } | null>(null);
   const voiceRef = useRef<VoiceListenHandle | null>(null);
 
@@ -188,8 +192,9 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
       .then((r) => readJson<{ accounts: SandboxAccount[] }>(r))
       .then((data) => {
         if (cancelled) return;
-        setAccounts(data.accounts);
-        setReceiverId(data.accounts[0]?.id || "");
+        const usable = data.accounts.filter((a) => a.preferredAsset !== "BTC");
+        setAccounts(usable);
+        setReceiverId(usable[0]?.id || "");
       })
       .catch((e) => {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load accounts");
@@ -222,7 +227,6 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
     voiceRef.current?.stop();
     setError("");
     setTranscript("");
-    setSettleMeta(null);
     setNotification(null);
     setPhase("listening");
 
@@ -273,7 +277,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
     setPendingName(matched.displayName);
     setPhase("settling");
     setError("");
-    setTamperMsg("");
+    setTamperState("idle");
     try {
       const q = await readJson<{
         quoteId: string;
@@ -300,11 +304,6 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
           body: JSON.stringify({ quoteId: q.quoteId }),
         })
       );
-      setLastRoute({
-        quoteId: q.quoteId,
-        routeId: r.routeId,
-        routeCommitment: r.routeCommitment,
-      });
       const s = await readJson<{
         receiptId: string;
         proofMode?: string;
@@ -314,7 +313,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
         proveMs?: number;
         quoteId: string;
         routeId: string;
-        payment: { id: string };
+        payment?: { id?: string };
       }>(
         await fetch("/api/universal/sandbox-settle", {
           method: "POST",
@@ -327,6 +326,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
         })
       );
 
+      const paymentId = s.payment?.id || s.receiptId;
       const targetLabel = `${q.quote.targetAmount} ${q.quote.targetAsset}`;
       setSenderBalance((b) => b - amount);
       setReceiverBalance((b) => b + Number(q.quote.targetAmount));
@@ -338,7 +338,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
       };
       const inRow: Activity = {
         id: `${s.receiptId}_in`,
-        name: "You",
+        name: SENDER_NAME,
         amountLabel: targetLabel,
         direction: "in",
       };
@@ -346,7 +346,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
       setReceiverActivity((prev) => [inRow, ...prev].slice(0, 4));
       setNotification(`Payment received · +${targetLabel}`);
       setSettleMeta({
-        paymentId: s.payment.id,
+        paymentId,
         quoteId: s.quoteId,
         routeId: s.routeId,
         routeCommitment: r.routeCommitment,
@@ -358,6 +358,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
         circuit: s.circuit,
         snarkDigest: s.snarkDigest,
         proveMs: s.proveMs,
+        refunded: false,
       });
       setPhase("settled");
       window.setTimeout(() => setNotification(null), 8000);
@@ -369,7 +370,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
 
   async function tamperRouteDemo() {
     if (!receiver) return;
-    setTamperMsg("");
+    setTamperState("running");
     setError("");
     try {
       const q = await readJson<{ quoteId: string }>(
@@ -391,11 +392,6 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
           body: JSON.stringify({ quoteId: q.quoteId }),
         })
       );
-      setLastRoute({
-        quoteId: q.quoteId,
-        routeId: r.routeId,
-        routeCommitment: r.routeCommitment,
-      });
       await readJson(
         await fetch("/api/universal/sandbox-settle", {
           method: "POST",
@@ -408,13 +404,11 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
           }),
         })
       );
-      setTamperMsg("Unexpected: tamper was accepted");
-    } catch (e) {
-      setTamperMsg(
-        `Tamper attempt: USD route → BTC route · Result: rejected · ${
-          e instanceof Error ? e.message : "Rejected"
-        }`
-      );
+      setTamperState("idle");
+      setError("Unexpected: tamper was accepted");
+      setPhase("error");
+    } catch {
+      setTamperState("blocked");
     }
   }
 
@@ -432,12 +426,38 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
     await confirmPay({ amount: 5000, recipient: maya.displayName }, maya);
   }
 
-  async function refundLast() {
-    if (!settleMeta?.paymentId) {
-      setError("No payment id — run settle first");
+  /** Sender asks for the money back — request goes to the receiver for approval. */
+  function requestRefund() {
+    if (!settleMeta?.paymentId || settleMeta.refunded) {
+      setError("Nothing to refund — send a payment first");
       setPhase("error");
       return;
     }
+    if (refundRequest) return;
+    const inr = pendingAmount || 0;
+    const targetAmt = Number(settleMeta.targetAmount) || 0;
+    setRefundRequest({
+      inr,
+      targetAmt,
+      targetAsset: settleMeta.targetAsset,
+      fromName: SENDER_NAME,
+      status: "pending",
+    });
+    setPhase("home");
+    setNotification(null);
+  }
+
+  function declineRefund() {
+    setRefundRequest(null);
+    setNotification("Refund declined by recipient");
+    window.setTimeout(() => setNotification(null), 5000);
+  }
+
+  /** Receiver approves — now the rail refund actually runs and balances reverse. */
+  async function approveRefund() {
+    if (!settleMeta?.paymentId || !refundRequest) return;
+    const { inr, targetAmt, targetAsset } = refundRequest;
+    setRefundRequest({ ...refundRequest, status: "processing" });
     try {
       await readJson(
         await fetch("/api/universal/refund", {
@@ -446,14 +466,29 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
           body: JSON.stringify({ paymentId: settleMeta.paymentId }),
         })
       );
-      setSettleMeta({
-        ...settleMeta,
-        attestationGrade: `${settleMeta.attestationGrade || "settled"} · refunded`,
-      });
-      setNotification("Refund initiated");
-      setPhase("home");
-      window.setTimeout(() => setNotification(null), 4000);
+      setSenderBalance((b) => b + inr);
+      setReceiverBalance((b) => Math.max(0, b - targetAmt));
+      const refundIntoSender: Activity = {
+        id: `${settleMeta.receiptId}_refund_in`,
+        name: "Refund",
+        amountLabel: formatInr(inr),
+        direction: "in",
+      };
+      const refundOutOfReceiver: Activity = {
+        id: `${settleMeta.receiptId}_refund_out`,
+        name: "Refund",
+        amountLabel:
+          targetAsset === "USD" ? `$${targetAmt.toFixed(2)}` : `${targetAmt} ${targetAsset}`,
+        direction: "out",
+      };
+      setSenderActivity((prev) => [refundIntoSender, ...prev].slice(0, 4));
+      setReceiverActivity((prev) => [refundOutOfReceiver, ...prev].slice(0, 4));
+      setSettleMeta({ ...settleMeta, refunded: true });
+      setRefundRequest(null);
+      setNotification(`Refund approved · ${formatInr(inr)} back in your wallet`);
+      window.setTimeout(() => setNotification(null), 6000);
     } catch (e) {
+      setRefundRequest(null);
       setError(e instanceof Error ? e.message : "Refund failed");
       setPhase("error");
     }
@@ -461,7 +496,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
 
   function chooseAnotherRoute() {
     setError("");
-    setTamperMsg("");
+    setTamperState("idle");
     setPhase("home");
   }
 
@@ -478,11 +513,12 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
             : "Sent"
           : "Tap to speak — amount and name (INR)";
 
-  const receiverStatus = notification
-    ? "New payment"
-    : receiver
-      ? `Accepts ${receiver.preferredAsset} · Stripe test`
-      : "Loading…";
+  const receiverStatus =
+    notification && !notification.startsWith("Refund")
+      ? "New payment"
+      : receiver
+        ? `Accepts ${receiver.preferredAsset}`
+        : "Loading…";
 
   const receiverBalanceLabel =
     receiver?.preferredAsset === "BTC"
@@ -491,36 +527,38 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
         ? `$${receiverBalance.toFixed(2)}`
         : String(receiverBalance);
 
+  const busy = phase === "listening" || phase === "settling" || tamperState === "running";
+  const authorizedAsset = receiver?.preferredAsset ?? "USD";
+
   return (
     <div className="uni-stage fade-in">
-      <header className="uni-stage__head">
-        <div>
-          <h1 className="brand-mark">Circle</h1>
-          <p>INR → preferred asset. Speak or run the judge demo.</p>
-        </div>
-        <button type="button" className="btn ghost" onClick={onBack}>
-          Menu
+      <div className="uni-stage__atmosphere" aria-hidden />
+
+      <div className="uni-stage__frame">
+      <header className="uni-stage__bar">
+        <button type="button" className="uni-stage__back" onClick={onBack}>
+          ← Menu
         </button>
+        <div className="uni-stage__brand">
+          <img src="/glyph.png" alt="" />
+          <div>
+            <strong className="brand-mark">Circle</strong>
+            <span>Speak INR · they receive what they accept</span>
+          </div>
+        </div>
+        <div className="uni-stage__bar-actions">
+          <button
+            type="button"
+            className="btn primary uni-stage__demo-btn"
+            disabled={busy || accounts.length === 0}
+            onClick={() => void runJudgeDemo()}
+          >
+            Run demo
+          </button>
+        </div>
       </header>
 
-      <details className="uni-stage__routeproof">
-        <summary>RouteProof · binds + tamper</summary>
-        <ul>
-          <li>sender · receiver · source/target asset</li>
-          <li>quoteId · routeId · expiry · acceptance</li>
-        </ul>
-        <p className="uni-stage__routeproof-result">
-          Tamper: USD → BTC ·{" "}
-          {tamperMsg
-            ? tamperMsg.toLowerCase().includes("rejected") ||
-              tamperMsg.toLowerCase().includes("mismatch")
-              ? "rejected"
-              : tamperMsg
-            : "run Try tamper route"}
-        </p>
-      </details>
-
-      <div className="uni-stage__receivers" role="tablist" aria-label="Receiver">
+      <div className="uni-stage__receivers" role="tablist" aria-label="Pay to">
         {accounts.map((a) => (
           <button
             key={a.id}
@@ -528,41 +566,47 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
             role="tab"
             aria-selected={receiverId === a.id}
             className={receiverId === a.id ? "is-active" : ""}
-            disabled={phase === "listening" || phase === "settling"}
+            disabled={busy}
             onClick={() => {
               setReceiverId(a.id);
               setNotification(null);
+              setTamperState("idle");
               if (phase === "settled" || phase === "error" || phase === "ping") setPhase("home");
             }}
           >
-            <strong>{a.displayName}</strong>
-            <em>
-              {a.preferredAsset} · {a.stripeAccountId || "stripe_test"}
-            </em>
+            <strong>{a.displayName.split(" ")[0]}</strong>
+            <em>{a.preferredAsset}</em>
           </button>
         ))}
       </div>
 
       <div className="uni-stage__phones">
         <div className="uni-phone">
-          <p className="uni-phone__label">You · send INR</p>
+          <p className="uni-phone__label">{SENDER_NAME} · INR</p>
           <div className="phone-shell uni-phone__shell">
             <div className="phone">
               <div className="phone__notch" aria-hidden />
               <div className="phone__screen">
                 <MiniHome
-                  role="You"
+                  role={SENDER_NAME}
                   assetLabel="INR"
                   balanceLabel={formatInr(senderBalance)}
-                  statusLine={senderStatus}
+                  statusLine={
+                    settleMeta?.refunded && notification?.startsWith("Refund")
+                      ? "Refund received"
+                      : senderStatus
+                  }
                   activity={senderActivity}
                   listening={phase === "listening"}
                   proving={phase === "settling"}
+                  notification={
+                    notification?.startsWith("Refund") ? notification : null
+                  }
                   onPay={() => {
                     if (phase === "ping" || phase === "settling") return;
                     startVoice();
                   }}
-                  inputHint="Tap widget · speak amount + name"
+                  inputHint="Tap · say amount and name"
                 />
                 {(phase === "listening" || phase === "settling") && (
                   <div className="home-overlay">
@@ -571,7 +615,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
                       <p>
                         {phase === "listening"
                           ? transcript || "Listening…"
-                          : "Proving route binding on Midnight…"}
+                          : "Proving route on Midnight…"}
                       </p>
                     </div>
                   </div>
@@ -597,29 +641,34 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
                         {formatInr(pendingAmount)} → {settleMeta.targetAmount}{" "}
                         {settleMeta.targetAsset}
                       </p>
-                      <p className="pay-result__grade">
-                        grade: {settleMeta.attestationGrade || "—"} ·{" "}
-                        {settleMeta.proofMode || "—"}
-                        {settleMeta.proveMs != null ? ` · ${settleMeta.proveMs}ms` : ""}
-                      </p>
-                      {settleMeta.circuit && (
-                        <p className="pay-result__sub">
-                          {settleMeta.circuit}
-                          {settleMeta.snarkDigest
-                            ? ` · snark ${settleMeta.snarkDigest.slice(0, 16)}…`
-                            : ""}
-                        </p>
+                      {settleMeta.attestationGrade && (
+                        <p className="pay-result__grade">{settleMeta.attestationGrade}</p>
                       )}
-                      <button type="button" className="btn primary" onClick={() => setPhase("home")}>
-                        Done
-                      </button>
+                      <div className="uni-stage__fail-actions">
+                        <button
+                          type="button"
+                          className="btn primary"
+                          onClick={() => setPhase("home")}
+                        >
+                          Done
+                        </button>
+                        {!settleMeta.refunded && !refundRequest && (
+                          <button
+                            type="button"
+                            className="btn ghost"
+                            onClick={requestRefund}
+                          >
+                            Request refund
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
                 {phase === "error" && (
                   <div className="home-overlay">
                     <div className="pay-result pay-result--err">
-                      <h2 className="pay-result__title">Payment blocked</h2>
+                      <h2 className="pay-result__title">Couldn’t send</h2>
                       <p className="pay-result__sub">{error}</p>
                       <div className="uni-stage__fail-actions">
                         <button
@@ -635,29 +684,16 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
                         >
                           Retry
                         </button>
-                        <button
-                          type="button"
-                          className="btn ghost"
-                          onClick={chooseAnotherRoute}
-                        >
-                          Choose another route
+                        <button type="button" className="btn ghost" onClick={chooseAnotherRoute}>
+                          Switch person
                         </button>
                         <button
                           type="button"
                           className="btn ghost"
-                          disabled={!settleMeta?.paymentId}
-                          onClick={() => void refundLast()}
+                          disabled={!settleMeta?.paymentId || settleMeta.refunded || !!refundRequest}
+                          onClick={requestRefund}
                         >
-                          Refund
-                        </button>
-                        <button
-                          type="button"
-                          className="btn ghost"
-                          onClick={() => {
-                            setError("Flagged for manual review — ops will reconcile.");
-                          }}
-                        >
-                          Manual review
+                          Request refund
                         </button>
                       </div>
                     </div>
@@ -669,9 +705,17 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
           </div>
         </div>
 
+        <div className="uni-stage__flow" aria-hidden>
+          <span className="uni-stage__flow-line" />
+          <span className="uni-stage__flow-label">
+            {receiver?.preferredAsset ?? "…"}
+          </span>
+          <span className="uni-stage__flow-line" />
+        </div>
+
         <div className="uni-phone">
           <p className="uni-phone__label">
-            {receiver?.displayName ?? "Receiver"} · gets {receiver?.preferredAsset ?? "…"}
+            {receiver?.displayName.split(" ")[0] ?? "Them"} · {receiver?.preferredAsset ?? "…"}
           </p>
           <div className="phone-shell uni-phone__shell">
             <div className="phone">
@@ -681,15 +725,63 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
                   role={receiver?.displayName ?? "Receiver"}
                   assetLabel={receiver?.preferredAsset ?? "—"}
                   balanceLabel={receiverBalanceLabel}
-                  statusLine={receiverStatus}
+                  statusLine={
+                    refundRequest
+                      ? "Refund requested"
+                      : settleMeta?.refunded
+                        ? "Refund sent back"
+                        : receiverStatus
+                  }
                   activity={receiverActivity}
-                  notification={notification}
+                  notification={
+                    notification && !notification.startsWith("Refund")
+                      ? notification
+                      : null
+                  }
                   inputHint={
-                    receiver
-                      ? `Stripe test · waits for ${receiver.preferredAsset}`
-                      : "Loading Stripe test account…"
+                    receiver ? `Waiting for ${receiver.preferredAsset}` : "Loading…"
                   }
                 />
+                {refundRequest && (
+                  <div className="home-overlay">
+                    <div className="pay-sheet refund-ask">
+                      <span className="refund-ask__emoji" aria-hidden>
+                        ↩
+                      </span>
+                      <h2 className="refund-ask__title">Refund request</h2>
+                      <p className="refund-ask__sub">
+                        {refundRequest.fromName} asks to reverse{" "}
+                        <strong>
+                          {refundRequest.targetAsset === "USD"
+                            ? `$${refundRequest.targetAmt.toFixed(2)}`
+                            : `${refundRequest.targetAmt} ${refundRequest.targetAsset}`}
+                        </strong>
+                      </p>
+                      <p className="refund-ask__note">
+                        Approving debits your balance and returns {formatInr(refundRequest.inr)} to
+                        the sender.
+                      </p>
+                      <div className="refund-ask__actions">
+                        <button
+                          type="button"
+                          className="btn primary"
+                          disabled={refundRequest.status === "processing"}
+                          onClick={() => void approveRefund()}
+                        >
+                          {refundRequest.status === "processing" ? "Refunding…" : "Approve refund"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          disabled={refundRequest.status === "processing"}
+                          onClick={declineRefund}
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="phone__home" aria-hidden />
             </div>
@@ -697,61 +789,138 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      {settleMeta && (
-        <p className="uni-stage__ids muted">
-          quoteId {settleMeta.quoteId} · routeId {settleMeta.routeId} · receipt{" "}
-          {settleMeta.receiptId}
-          {settleMeta.routeCommitment
-            ? ` · routeCommitment ${settleMeta.routeCommitment.slice(0, 16)}…`
-            : ""}
-          {settleMeta.snarkDigest ? ` · snarkDigest ${settleMeta.snarkDigest.slice(0, 24)}…` : ""}
-        </p>
-      )}
-
-      <div className="uni-stage__actions">
-        <button
-          type="button"
-          className="btn primary"
-          disabled={phase === "listening" || phase === "settling" || accounts.length === 0}
-          onClick={() => void runJudgeDemo()}
-        >
-          Run judge demo
-        </button>
-        <button
-          type="button"
-          className="btn ghost"
-          disabled={phase === "listening" || phase === "settling"}
-          onClick={() => void tamperRouteDemo()}
-        >
-          Try tamper route
-        </button>
-        {settleMeta?.paymentId && (
+      <section className="uni-stage__safety" aria-label="Route safety">
+        <div className="uni-stage__safety-copy">
+          <h2>Route stays locked</h2>
+          <p>
+            You authorize a person and an asset. If anything tries to change that after you say
+            yes, Circle blocks it.
+          </p>
+        </div>
+        <div className="uni-stage__compare" data-state={tamperState}>
+          <div className="uni-stage__compare-card is-ok">
+            <span>You authorized</span>
+            <strong>
+              {receiver?.displayName.split(" ")[0] ?? "Them"} · {authorizedAsset}
+            </strong>
+          </div>
+          <div className="uni-stage__compare-vs" aria-hidden>
+            {tamperState === "blocked" ? "✕" : "→"}
+          </div>
+          <div
+            className={`uni-stage__compare-card ${
+              tamperState === "blocked" ? "is-blocked" : "is-threat"
+            }`}
+          >
+            <span>{tamperState === "blocked" ? "Blocked attempt" : "Bad router tries"}</span>
+            <strong>
+              {receiver?.displayName.split(" ")[0] ?? "Them"} · BTC
+            </strong>
+          </div>
+        </div>
+        <div className="uni-stage__actions">
           <button
             type="button"
             className="btn ghost"
-            disabled={phase === "listening" || phase === "settling"}
-            onClick={() => void refundLast()}
+            disabled={busy}
+            onClick={() => void tamperRouteDemo()}
           >
-            Refund
+            {tamperState === "running"
+              ? "Checking…"
+              : tamperState === "blocked"
+                ? "Try again"
+                : "Simulate switch to BTC"}
           </button>
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={busy || !settleMeta?.paymentId || settleMeta.refunded || !!refundRequest}
+            onClick={requestRefund}
+            title={
+              !settleMeta?.paymentId
+                ? "Send a payment first"
+                : settleMeta.refunded
+                  ? "Already refunded"
+                  : refundRequest
+                    ? "Waiting for recipient approval"
+                    : "Ask the recipient to return the last payment"
+            }
+          >
+            {settleMeta?.refunded
+              ? "Refunded"
+              : refundRequest
+                ? "Awaiting approval…"
+                : "Request refund"}
+          </button>
+          {refundRequest && (
+            <span className="uni-stage__pill" role="status">
+              Sent to {receiver?.displayName.split(" ")[0] ?? "recipient"} for approval
+            </span>
+          )}
+          {tamperState === "blocked" && (
+            <span className="uni-stage__pill uni-stage__pill--ok" role="status">
+              Payment never left
+            </span>
+          )}
+          {settleMeta?.attestationGrade && (
+            <span className="uni-stage__pill" role="status">
+              {settleMeta.refunded
+                ? `${settleMeta.attestationGrade} · refunded`
+                : settleMeta.attestationGrade}
+            </span>
+          )}
+        </div>
+        {tamperState === "blocked" && (
+          <p className="uni-stage__safety-result" role="status">
+            You said {authorizedAsset}. A router tried to rewrite it to BTC. RouteProof didn’t
+            match — settle refused.
+          </p>
         )}
-        {lastRoute && (
-          <span className="muted uni-stage__ids">
-            last routeCommitment {lastRoute.routeCommitment.slice(0, 16)}…
-          </span>
-        )}
-      </div>
-      {tamperMsg && (
-        <p className="uni-stage__tamper" role="status">
-          {tamperMsg}
-        </p>
-      )}
+      </section>
 
-      <p className="uni-stage__note muted">
-        Real: Compact + Midnight proof-server SNARKs over the route bind. Sandbox: Stripe test
-        Connect + FX. Never claim licensed UPI/bank. Open Command center for the technical
-        receipt.
-      </p>
+      <footer className="uni-stage__foot">
+        <div className="uni-stage__tech-body">
+          <h3 className="uni-stage__tech-title">Technical receipt</h3>
+          {settleMeta ? (
+            <dl>
+              <div>
+                <dt>quote</dt>
+                <dd>{settleMeta.quoteId}</dd>
+              </div>
+              <div>
+                <dt>route</dt>
+                <dd>{settleMeta.routeId}</dd>
+              </div>
+              <div>
+                <dt>receipt</dt>
+                <dd>{settleMeta.receiptId}</dd>
+              </div>
+              {settleMeta.routeCommitment && (
+                <div>
+                  <dt>commitment</dt>
+                  <dd>{settleMeta.routeCommitment.slice(0, 24)}…</dd>
+                </div>
+              )}
+              {settleMeta.snarkDigest && (
+                <div>
+                  <dt>snark</dt>
+                  <dd>{settleMeta.snarkDigest.slice(0, 24)}…</dd>
+                </div>
+              )}
+              <div>
+                <dt>status</dt>
+                <dd>{settleMeta.refunded ? "refunded" : "settled"}</dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="muted">Run demo or speak a payment — IDs appear here after settle.</p>
+          )}
+          <p className="muted">
+            Sandbox Stripe TEST · not licensed UPI/bank · Command center for ops.
+          </p>
+        </div>
+      </footer>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 {
   "name": "Circle",
   "short_name": "Circle",
-  "description": "Confidential voice payments on Midnight",
+  "description": "Private voice agentic payments on Midnight",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",

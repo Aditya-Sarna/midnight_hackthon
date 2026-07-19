@@ -85,8 +85,8 @@ export function ProductGate({
         <Glyph size={96} pulse />
         <h1 className="brand-mark product-gate__brand">Circle</h1>
         <p className="product-gate__tag">
-          Confidential voice payments on Midnight. Balances stay on your device; the public ledger
-          only sees proofs. Browser speech may use cloud STT — payment secrets do not.
+          Private voice agentic payments on Midnight. Balances stay on your device; the public
+          ledger only sees proofs. Browser speech may use cloud STT — payment secrets do not.
         </p>
 
         {!restoreOpen ? (
