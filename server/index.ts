@@ -2082,7 +2082,7 @@ app.post("/api/seed/peer", (req, res) => {
 if (process.env.NODE_ENV === "production") {
   const dist = join(__dirname, "../dist");
   app.use(express.static(dist));
-  app.get("*", (_req, res) => {
+  app.use((_req, res) => {
     res.sendFile(join(dist, "index.html"));
   });
 }

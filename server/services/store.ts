@@ -8,20 +8,30 @@ import { pubkeyThumbprint } from "./keys.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, "../../data");
-const STORE_PATH = process.env.NYXPAY_STORE_PATH || join(DATA_DIR, "circled-store.db");
 const LEGACY_STORE_PATH = join(DATA_DIR, "circled-store.json");
 export const STORE_SCHEMA_VERSION = 4;
 /** Production SQLite via better-sqlite3 (not Node's experimental node:sqlite). */
 export const STORE_ENGINE = "better-sqlite3" as const;
 
 let db: SqliteDatabase | null = null;
+let dbPath: string | null = null;
+
+function resolveStorePath(): string {
+  return process.env.NYXPAY_STORE_PATH || join(DATA_DIR, "circled-store.db");
+}
 
 function storeDb(): SqliteDatabase {
-  if (db) return db;
-  const storeDir = dirname(STORE_PATH);
+  const storePath = resolveStorePath();
+  if (db && dbPath === storePath) return db;
+  if (db && dbPath !== storePath) {
+    db.close();
+    db = null;
+  }
+  const storeDir = dirname(storePath);
   if (!existsSync(storeDir)) mkdirSync(storeDir, { recursive: true });
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  db = new Database(STORE_PATH);
+  db = new Database(storePath);
+  dbPath = storePath;
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
   db.exec(`
@@ -261,6 +271,7 @@ export function closeStore() {
   if (!db) return;
   db.close();
   db = null;
+  dbPath = null;
 }
 
 export function issueKyc(
