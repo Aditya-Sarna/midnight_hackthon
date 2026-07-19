@@ -1453,6 +1453,167 @@ select:focus {
   height: 16px;
 }
 
+/* Identity verification card for non-contact payees */
+.pay-verify--id {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  background: #f4f5f7;
+  border: 1px solid rgba(20, 18, 15, 0.12);
+}
+
+.pay-verify--id.pay-verify--ok {
+  background: linear-gradient(145deg, #eafaf0 0%, #dcf3e6 100%);
+  border-color: rgba(31, 122, 74, 0.35);
+}
+
+.pay-verify--id.pay-verify--warn {
+  background: #fff5f3;
+  border-color: rgba(196, 30, 58, 0.28);
+}
+
+.pay-verify__id-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pay-verify__id-head > div {
+  display: grid;
+  gap: 2px;
+}
+
+.pay-verify--id em {
+  color: rgba(40, 40, 45, 0.72);
+  line-height: 1.35;
+}
+
+.pay-verify--id.pay-verify--ok em {
+  color: #1f7a4a;
+}
+
+.pay-verify--id.pay-verify--warn em {
+  color: #c41e3a;
+}
+
+.pay-verify__id-mark {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  font-weight: 800;
+  background: rgba(20, 18, 15, 0.1);
+  color: #333;
+}
+
+.pay-verify__id-mark.is-ok {
+  background: linear-gradient(145deg, #34c759, #1f9d4d);
+  color: #fff;
+}
+
+.pay-verify__id-mark.is-warn {
+  background: #c41e3a;
+  color: #fff;
+}
+
+.pay-verify__id-spin {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+
+.pay-verify__id-btn {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: none;
+  background: #0a0a0a;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+.pay-verify__id-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pay-verify__id-btn--ghost {
+  background: transparent;
+  color: #0a0a0a;
+  border: 1px solid rgba(20, 18, 15, 0.25);
+}
+
+.pay-verify__id-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.pay-verify__id-pick {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(20, 18, 15, 0.16);
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pay-verify__id-pick:hover:not(:disabled) {
+  border-color: rgba(20, 18, 15, 0.4);
+}
+
+.pay-verify__id-pick-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pay-verify__id-pick-main strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.pay-verify__id-pick-main em {
+  font-style: normal;
+  font-size: 0.72rem;
+  color: rgba(40, 40, 45, 0.66);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pay-verify__id-tag {
+  flex: none;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+
+.pay-verify__id-tag.is-ok {
+  background: rgba(31, 122, 74, 0.14);
+  color: #1f7a4a;
+}
+
+.pay-verify__id-tag.is-warn {
+  background: rgba(196, 30, 58, 0.12);
+  color: #c41e3a;
+}
+
 .govt-badge {
   display: inline-flex;
   align-self: flex-start;

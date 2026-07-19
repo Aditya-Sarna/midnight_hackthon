@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 
 export type MenuDestination =
   | "circle"
+  | "voice"
   | "truth"
   | "universal"
-  | "judge"
   | "tour";
 
 type Item = {
@@ -25,6 +25,12 @@ const ITEMS: Item[] = [
     hero: true,
   },
   {
+    id: "voice",
+    index: "→",
+    label: "Voice / test",
+    hint: "Skip setup · straight to the voice payment screen",
+  },
+  {
     id: "truth",
     index: "I",
     label: "Real vs demo",
@@ -37,14 +43,8 @@ const ITEMS: Item[] = [
     hint: "Two phones · speak to pay · Stripe test · receiver notifies",
   },
   {
-    id: "judge",
-    index: "III",
-    label: "Command center",
-    hint: "Proof health · route IDs · lifecycle receipt",
-  },
-  {
     id: "tour",
-    index: "IV",
+    index: "III",
     label: "Guided tour",
     hint: "Voice pay gold path · zk-proved settle",
   },

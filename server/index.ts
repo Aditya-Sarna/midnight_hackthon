@@ -1513,6 +1513,116 @@ app.post("/api/brands/lookup", (req, res) => {
   res.json(classifyRecipient(store, q));
 });
 
+/**
+ * Recipient verification for unknown / non-contact payees.
+ *
+ * Names are NOT unique — many people share one. So this resolves a spoken name
+ * to a set of distinct identities (unique handle + jurisdiction + opaque account
+ * id) and only reports "verified" when exactly one KYC-cleared identity matches.
+ * Multiple matches return "ambiguous" so the UI can force an explicit pick.
+ */
+app.post("/api/recipients/verify", (req, res) => {
+  const q = String(req.body?.recipient ?? req.body?.q ?? "").trim();
+  if (!q) return res.status(400).json({ error: "recipient required" });
+  // Optional: caller already resolved to a specific identity handle/id.
+  const selectedId = req.body?.identityId ? String(req.body.identityId) : "";
+
+  // 1) Registered brand / merchant (single canonical identity).
+  const brand = classifyRecipient(store, q);
+  if (brand.status === "verified" && brand.brand) {
+    return res.json({
+      ok: true,
+      recipient: q,
+      status: "verified",
+      basis: "brand_registry",
+      label: `${brand.brand.name} · verified merchant`,
+      detail: `Registered merchant · ${brand.brand.domain}`,
+      matches: [
+        {
+          id: brand.brand.id,
+          displayName: brand.brand.name,
+          handle: brand.brand.domain,
+          asset: "—",
+          jurisdiction: "merchant",
+          kycStatus: "brand_registered",
+          sanctionsStatus: "clear",
+          maskedId: brand.merchant_identifier
+            ? `${String(brand.merchant_identifier).slice(0, 10)}…`
+            : brand.brand.domain,
+          verified: true,
+        },
+      ],
+    });
+  }
+
+  // 2) All sandbox identities matching this name/handle (there may be several).
+  const norm = q.toLowerCase();
+  const all = listSandboxAccounts().filter(
+    (a) =>
+      a.displayName.toLowerCase() === norm ||
+      a.displayName.toLowerCase().split(" ")[0] === norm ||
+      a.handle.toLowerCase() === norm
+  );
+  const toMatch = (a: (typeof all)[number]) => ({
+    id: a.id,
+    displayName: a.displayName,
+    handle: a.handle,
+    asset: a.preferredAsset,
+    jurisdiction: a.jurisdiction,
+    kycStatus: a.kycStatus,
+    sanctionsStatus: a.sanctionsStatus,
+    maskedId: `${a.opaqueDestinationId.slice(0, 10)}…`,
+    verified: a.kycStatus !== "unverified" && a.sanctionsStatus === "clear",
+  });
+
+  // If the caller pre-selected an identity, evaluate just that one.
+  const scoped = selectedId ? all.filter((a) => a.id === selectedId) : all;
+
+  if (scoped.length === 0) {
+    return res.json({
+      ok: true,
+      recipient: q,
+      status: "unverified",
+      basis: "none",
+      label: "Not in any verified registry",
+      detail: "No brand-registry match and no cleared KYC record for this payee.",
+      matches: [],
+    });
+  }
+
+  if (scoped.length > 1) {
+    return res.json({
+      ok: true,
+      recipient: q,
+      status: "ambiguous",
+      basis: "kyc_ambiguous",
+      label: `${scoped.length} people match “${q}”`,
+      detail: "More than one identity shares this name — pick the exact recipient.",
+      matches: scoped.map(toMatch),
+    });
+  }
+
+  const only = toMatch(scoped[0]);
+  return res.json({
+    ok: true,
+    recipient: q,
+    status: only.verified ? "verified" : "unverified",
+    basis: only.verified
+      ? only.kycStatus === "enhanced_verified"
+        ? "kyc_enhanced"
+        : "kyc_sandbox"
+      : "kyc_pending",
+    label: only.verified
+      ? `${only.displayName} · @${only.handle}`
+      : `${only.displayName} · KYC pending`,
+    detail: only.verified
+      ? `KYC ${only.kycStatus} · ${only.jurisdiction} · ${only.maskedId}`
+      : "Identity exists but KYC is not cleared yet.",
+    kycStatus: only.kycStatus,
+    matches: [only],
+  });
+});
+
 app.get("/api/brands", (req, res) => {
   const registered = req.query.registered;
   const limit = Math.min(Number(req.query.limit) || 50, 200);
@@ -2079,7 +2189,7 @@ app.post("/api/seed/peer", (req, res) => {
   }
 });
 
-if (process.env.NODE_ENV === "production") {
+if (cfg.isStrict) {
   const dist = join(__dirname, "../dist");
   app.use(express.static(dist));
   app.use((_req, res) => {

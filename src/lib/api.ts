@@ -150,8 +150,42 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ recipient }),
     }),
+  verifyRecipient: (recipient: string, identityId?: string) =>
+    req<RecipientVerification>("/recipients/verify", {
+      method: "POST",
+      body: JSON.stringify({ recipient, identityId }),
+    }),
   brandStats: () =>
     req<{ total: number; registeredCount: number; unregisteredCount: number }>("/brands/stats"),
+};
+
+export type RecipientMatch = {
+  id: string;
+  displayName: string;
+  handle: string;
+  asset: string;
+  jurisdiction: string;
+  kycStatus: string;
+  sanctionsStatus: string;
+  maskedId: string;
+  verified: boolean;
+};
+
+export type RecipientVerification = {
+  ok: boolean;
+  recipient: string;
+  status: "verified" | "unverified" | "ambiguous";
+  basis:
+    | "brand_registry"
+    | "kyc_sandbox"
+    | "kyc_enhanced"
+    | "kyc_pending"
+    | "kyc_ambiguous"
+    | "none";
+  label: string;
+  detail: string;
+  kycStatus?: string;
+  matches?: RecipientMatch[];
 };
 
 export type BrandLookup = {

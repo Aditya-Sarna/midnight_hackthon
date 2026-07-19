@@ -21,8 +21,15 @@ import { StrategyScreen } from "./screens/Strategy";
 import { MoneyRailsScreen } from "./screens/MoneyRails";
 import { LegalScreen } from "./screens/Legal";
 import { UniversalAdapterDemo } from "./screens/UniversalAdapterDemo";
-import { JudgeCommandCenter } from "./screens/JudgeCommandCenter";
-import { api, clearSession, loadSession, type PublicUser } from "./lib/api";
+import {
+  api,
+  clearSession,
+  loadSession,
+  saveSession,
+  deviceId,
+  type PublicUser,
+} from "./lib/api";
+import { bootstrapProductionDemo } from "./lib/bootstrap";
 import { clearAllVaults, loadVault, type DeviceVaultState } from "./lib/deviceVault";
 import { disableDemoMode, enableDemoMode, isDemoMode } from "./lib/productMode";
 import { publicUserFromVault } from "./lib/offlineUser";
@@ -54,7 +61,6 @@ type View =
   | "strategy"
   | "truth"
   | "universal"
-  | "judge"
   | "rails"
   | "privacy"
   | "terms";
@@ -219,7 +225,6 @@ export default function App() {
       director: "Guided tour",
       "zk-demo": "Circuit walkthrough",
       universal: "Universal adapter",
-      judge: "Command center",
       truth: "Real vs demo",
       loading: "Boot",
       boot: "Boot",
@@ -291,17 +296,36 @@ export default function App() {
       return;
     }
 
-    if (dest === "judge") {
-      enterShowcase();
-      setDirectorAuto(null);
-      setView("judge");
-      return;
-    }
-
     if (dest === "tour") {
       enterShowcase();
       setDirectorAuto("tour");
       setView("director");
+      return;
+    }
+
+    // voice / test — jump straight into the voice payment screen, no wallet setup
+    if (dest === "voice") {
+      disableDemoMode();
+      setDemoMode(false);
+      setSystemsOpen(false);
+      setGuided(false);
+      setDirectorAuto(null);
+      setGuideCommand(null);
+      setLoadDetail("Preparing a test wallet…");
+      setView("loading");
+      void (async () => {
+        try {
+          deviceId();
+          const result = await bootstrapProductionDemo();
+          saveSession(result.user.id);
+          setUser(result.user);
+          void loadVault(result.user.id).then(setVaultSnapshot);
+          setView("wallet");
+        } catch {
+          // Fall back to the normal account gate if provisioning fails
+          setView("gate");
+        }
+      })();
       return;
     }
 
@@ -426,7 +450,7 @@ export default function App() {
     return <BootLoading detail={loadDetail} />;
   }
 
-  const immersiveStage = view === "universal" || view === "judge";
+  const immersiveStage = view === "universal";
 
   return (
     <div
@@ -582,7 +606,6 @@ export default function App() {
         view === "rails" ||
         view === "privacy" ||
         view === "terms" ||
-        view === "judge" ||
         view === "recovery") && (
         <main className={stageClass}>
           {demoMode && guided && view === "wallet" && (
@@ -660,9 +683,6 @@ export default function App() {
                 kind={view === "privacy" ? "privacy" : "terms"}
                 onBack={() => setView("settings")}
               />
-            )}
-            {view === "judge" && (
-              <JudgeCommandCenter onBack={() => setView("menu")} />
             )}
             {view === "wallet" && user && (
               <Wallet

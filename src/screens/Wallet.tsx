@@ -916,6 +916,12 @@ export function Wallet({
                   "newContact" in pendingBundle &&
                   pendingBundle.newContact
               )}
+              requireRecipientVerification={Boolean(
+                pendingBundle &&
+                  pendingBundle.ok &&
+                  "newContact" in pendingBundle &&
+                  pendingBundle.newContact
+              )}
               recipientCandidates={recipientCandidates}
               requiresSecondaryConfirm={Boolean(pending?.requiresSecondaryConfirm)}
               onDeny={() => {

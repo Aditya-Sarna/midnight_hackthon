@@ -836,6 +836,7 @@ export function UniversalAdapterDemo({ onBack }: { onBack: () => void }) {
                     <PaymentPing
                       amount={pendingAmount}
                       recipient={pendingName}
+                      requireRecipientVerification
                       onConfirm={(edits) => void confirmPay(edits)}
                       onDeny={() => setPhase("home")}
                     />
